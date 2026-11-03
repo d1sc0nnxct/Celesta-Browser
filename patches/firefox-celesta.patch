@@ -108909,10 +108909,10 @@ index 0000000000..3cfebffdc8
 +}
 diff --git a/browser/content/celesta/chrome.css b/browser/content/celesta/chrome.css
 new file mode 100644
-index 0000000000..11bd123d05
+index 0000000000..aa054c4fe3
 --- /dev/null
 +++ b/browser/content/celesta/chrome.css
-@@ -0,0 +1,981 @@
+@@ -0,0 +1,1004 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -109894,12 +109894,35 @@ index 0000000000..11bd123d05
 +  color: var(--Celesta-text) !important;
 +  border-top-color: transparent !important;
 +}
++
++/* window controls: pills at any corner-roundness setting */
++#window-controls toolbarbutton,
++.titlebar-buttonbox-container toolbarbutton {
++  border-radius: 999px !important;
++}
++
++/* vertical tabs: keep the rail clear of the rounded corners */
++#vertical-tabs,
++#Celesta-vertical-tabs {
++  overflow: hidden;
++  padding: calc(var(--Celesta-radius, 24px) * 0.45) calc(var(--Celesta-radius, 24px) * 0.3) !important;
++  box-sizing: border-box;
++}
++
++/* bars grow with the window density setting as well as their own scale */
++:root[uidensity="compact"] { --Celesta-density: 0.88; }
++:root[uidensity="touch"] { --Celesta-density: 1.14; }
++:root { --Celesta-density: var(--Celesta-density, 1); }
++#navigator-toolbox { zoom: calc(var(--Celesta-bars-scale, 1) * var(--Celesta-density, 1)); }
++
++/* the two pills share the width evenly instead of the last one stretching */
++#Celesta-tabbar, #Celesta-bookmarks { flex: 1 1 0; min-width: 0; }
 diff --git a/browser/content/celesta/chrome.js b/browser/content/celesta/chrome.js
 new file mode 100644
-index 0000000000..fb9718d47f
+index 0000000000..a2b454d0cd
 --- /dev/null
 +++ b/browser/content/celesta/chrome.js
-@@ -0,0 +1,1785 @@
+@@ -0,0 +1,1794 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -110758,8 +110781,17 @@ index 0000000000..fb9718d47f
 +    document.addEventListener("popuphidden", scheduleHide);
 +    gBrowser.tabContainer.addEventListener("TabSelect", () => {
 +      pointerNearEdge = false;
++      show();                       // a new tab or a middle-clicked link
 +      scheduleHide();
 +    });
++    // Ctrl+Space brings the bars back without reaching for the edge
++    addEventListener("keydown", (e) => {
++      if (e.ctrlKey && !e.altKey && !e.metaKey && e.code == "Space") {
++        e.preventDefault();
++        pointerNearEdge = false;
++        show();
++      }
++    }, true);
 +    scheduleHide();
 +    window.CelestaBars = {
 +      near(isNear) {
@@ -111812,10 +111844,10 @@ index 0000000000..cad8621b82
 +};
 diff --git a/browser/content/celesta/graph.js b/browser/content/celesta/graph.js
 new file mode 100644
-index 0000000000..5d9e0e5e1f
+index 0000000000..816cf5e849
 --- /dev/null
 +++ b/browser/content/celesta/graph.js
-@@ -0,0 +1,2509 @@
+@@ -0,0 +1,2540 @@
 +/* ============================================================
 +   Star network graph + right-click floating omnibox
 +   World coordinates: (0,0) = viewport center at scale 1
@@ -112330,6 +112362,7 @@ index 0000000000..5d9e0e5e1f
 +let camReset = null;         // { from, t0, dur } eases the camera home (Back button)
 +let lastT = 0;               // for dt-based easing in frame()
 +let pointerScreen = { x: -1e5, y: -1e5 };  // for proximity icon reveal
++const revealEase = { x: -1e5, y: -1e5 };      // eased copy, so the reveal trails the cursor
 +let pointerMoved = true;      // proximity checks only rerun when the pointer or camera moves
 +let lastCam = "";
 +let panDrag = null;           // { startX, startY, panX, panY } when panning background
@@ -112811,11 +112844,16 @@ index 0000000000..5d9e0e5e1f
 +function showDom(n) {
 +  if (!n.el) createNodeEl(n);
 +  else if (!n.el.isConnected) { catBox(n.ci).appendChild(n.el); turnBox(n.ci); }
++  n.el.classList.remove("leaving");
 +  domNodes.add(n);
 +}
 +function hideDom(n) {
 +  if (n === lockedNode || n === warp?.target) return;
-+  n.el?.remove();
++  if (n.el && n.el.isConnected) {
++    n.el.classList.add("leaving");
++    const el = n.el;
++    setTimeout(() => { if (!domNodes.has(n)) el.remove(); }, 120);
++  }
 +  domNodes.delete(n);
 +  if (n._near) { n._near = false; n.el.classList.remove("near"); }
 +  if (hovered === n) { hovered = null; refreshLit(); }
@@ -112967,7 +113005,7 @@ index 0000000000..5d9e0e5e1f
 +   A struck celesta: sine fundamental plus a few quiet inharmonic partials,
 +   fast attack and a long exponential decay. Pitches come from a major
 +   pentatonic so any random pair of hovers still sounds consonant. */
-+const CELESTA_STEPS = [0, 2, 4, 7, 9];
++const CELESTA_STEPS = [0, 2, 4, 5, 7, 9, 11];   // major scale: 35 pitches over five octaves
 +let audioCtx = null, audioMaster = null, lastNoteAt = -1;
 +const VOLUME_PREF = "celesta.audio.volume";
 +const VOLUME_DEFAULT = 24;                      // percent of the 0.05 ceiling
@@ -113000,6 +113038,18 @@ index 0000000000..5d9e0e5e1f
 +  slider.addEventListener("input", () => { ensureAudio(); resumeAudio(); setHoverVolume(+slider.value); });
 +  addEventListener("pointerdown", (e) => { if (!box.contains(e.target) && !btn.contains(e.target)) box.classList.add("hidden"); }, true);
 +}
++/* short synthetic room: noise with a power-curve decay, stereo-independent */
++function celestaImpulse(ac, seconds, decay) {
++  const len = Math.max(1, Math.floor(ac.sampleRate * seconds));
++  const buf = ac.createBuffer(2, len, ac.sampleRate);
++  for (let ch = 0; ch < 2; ch++) {
++    const d = buf.getChannelData(ch);
++    for (let i = 0; i < len; i++) {
++      d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay) * 0.6;
++    }
++  }
++  return buf;
++}
 +function ensureAudio() {
 +  if (audioCtx) return audioCtx;
 +  const AC = window.AudioContext || window.webkitAudioContext;
@@ -113009,6 +113059,14 @@ index 0000000000..5d9e0e5e1f
 +    audioMaster = audioCtx.createGain();
 +    audioMaster.gain.value = hoverVolume();  // a hover, not a notification
 +    audioMaster.connect(audioCtx.destination);
++    // a small room: the note keeps its attack but rings out behind it
++    const conv = audioCtx.createConvolver();
++    conv.buffer = celestaImpulse(audioCtx, 1.7, 2.6);
++    const wet = audioCtx.createGain();
++    wet.gain.value = 0.3;
++    audioMaster.connect(conv);
++    conv.connect(wet);
++    wet.connect(audioCtx.destination);
 +  } catch { audioCtx = null; }
 +  return audioCtx;
 +}
@@ -113031,7 +113089,7 @@ index 0000000000..5d9e0e5e1f
 +  let h = 2166136261;
 +  const s = String(seed || "");
 +  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
-+  const steps = 4 * CELESTA_STEPS.length;         // four octaves of pentatonic
++  const steps = 5 * CELESTA_STEPS.length;         // five octaves
 +  const idx = (h >>> 0) % steps;
 +  return 60 + Math.floor(idx / CELESTA_STEPS.length) * 12 + CELESTA_STEPS[idx % CELESTA_STEPS.length];
 +}
@@ -113273,7 +113331,9 @@ index 0000000000..5d9e0e5e1f
 +   name's top centre sits 9 world px under its bubble */
 +function pushLabels() {
 +  Bubbles.setLabels([...shown].map((n) => ({
-+    i: n.idx, x: n.home.x, y: n.home.y, cat: n.ci, dy: bubbleSize(n) / 2 + 9, text: n.name, en: n.en,
++    i: n.idx, x: n.home.x, y: n.home.y, cat: n.ci,
++    // small bubbles need a little more clearance or the name sits on the glow
++    dy: bubbleSize(n) / 2 + (bubbleSize(n) < 44 ? 12 : 9), text: n.name, en: n.en,
 +    dim: filterTags.length > 0 && !matchesTags(n),
 +  })));
 +}
@@ -113906,7 +113966,10 @@ index 0000000000..5d9e0e5e1f
 +  const nearR2 = (170 * Math.min(1, Math.max(0.3, zoom / homeZoom))) ** 2;
 +  // logos show around the pointer, or the screen's centre while the pointer
 +  // is locked for an endless drag (it is hidden and does not move)
-+  const reveal = document.pointerLockElement ? { x: innerWidth / 2, y: innerHeight / 2 } : pointerScreen;
++  // the reveal point trails the real pointer slightly: icons catch up instead of snapping
++  if (document.pointerLockElement) { revealEase.x = innerWidth / 2; revealEase.y = innerHeight / 2; }
++  else { revealEase.x += (pointerScreen.x - revealEase.x) * 0.16; revealEase.y += (pointerScreen.y - revealEase.y) * 0.16; }
++  const reveal = revealEase;
 +  pointerMoved = false;
 +  if (turn && warp) {
 +    Bubbles.draw(pan, zoom, spinTable);
@@ -115821,7 +115884,7 @@ index 0000000000..4d6fc8fdf4
 +Space.rendererMain();
 diff --git a/browser/content/celesta/space.js b/browser/content/celesta/space.js
 new file mode 100644
-index 0000000000..ef4f256a95
+index 0000000000..735468a0b8
 --- /dev/null
 +++ b/browser/content/celesta/space.js
 @@ -0,0 +1,502 @@
@@ -116233,7 +116296,7 @@ index 0000000000..ef4f256a95
 +  }
 +
 +  /* the sky's layers (uF0..uF5): how much each moves with a pan */
-+  const PARALLAX = [0.86, 0.90, 0.94, 0.86, 0.92, 0.97];
++  const PARALLAX = [1, 1, 1, 1, 1, 1];
 +  const SKY_ZOOM = 0.5;   // sky zoom = page zoom ^ SKY_ZOOM
 +  let focus = null, cam = null;
 +  /* Follows the page camera: a pan moves each layer by its parallax share;
@@ -116329,10 +116392,10 @@ index 0000000000..ef4f256a95
 +})();
 diff --git a/browser/content/celesta/style.css b/browser/content/celesta/style.css
 new file mode 100644
-index 0000000000..2b32adc2b0
+index 0000000000..055b66dbe9
 --- /dev/null
 +++ b/browser/content/celesta/style.css
-@@ -0,0 +1,521 @@
+@@ -0,0 +1,525 @@
 +/* ============================================================
 +   OLED black floating home ΓÇö Obsidian-style star network
 +   Palette: true black canvas, glass panels, nebula accent
@@ -116854,6 +116917,10 @@ index 0000000000..2b32adc2b0
 +  accent-color: rgba(255,255,255,0.7);
 +  background: transparent;
 +}
++
++/* bubbles fade in and out instead of popping with their DOM nodes */
++.node { transition: opacity .12s ease; }
++.node.leaving { opacity: 0; }
 diff --git a/browser/content/celesta/window.css b/browser/content/celesta/window.css
 new file mode 100644
 index 0000000000..cb37496658
