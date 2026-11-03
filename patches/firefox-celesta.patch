@@ -46,6 +46,30 @@ index 58b32cc90a..50991f078d 100644
      PointerlockFsWarning.showPointerLock(originNoSuffix);
    },
  
+diff --git a/browser/base/content/browser-init.js b/browser/base/content/browser-init.js
+index 427ce1700f..e04b1cfdde 100644
+--- a/browser/base/content/browser-init.js
++++ b/browser/base/content/browser-init.js
+@@ -2,6 +2,19 @@
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
++// Celesta's start page actor: registered here, at window startup, so it is in
++// place before the first start page loads (the redirector module loads too late).
++try {
++  ChromeUtils.registerWindowActor("CelestaHome", {
++    parent: { esModuleURI: "chrome://celesta/content/CelestaHomeParent.sys.mjs" },
++    child: {
++      esModuleURI: "chrome://celesta/content/CelestaHomeChild.sys.mjs",
++      events: { DOMContentLoaded: {}, pageshow: {}, unload: {} },
++    },
++    matches: ["chrome://celesta/content/*", "about:home", "about:newtab"],
++    allFrames: false,
++  });
++} catch (e) {}
+ let _resolveDelayedStartup;
+ var delayedStartupPromise = new Promise(resolve => {
+   _resolveDelayedStartup = resolve;
 diff --git a/browser/base/content/browser-sets.inc.xhtml b/browser/base/content/browser-sets.inc.xhtml
 index 9190c6e7f8..106b67bc4c 100644
 --- a/browser/base/content/browser-sets.inc.xhtml
@@ -101368,7 +101392,7 @@ index cadf7a2160..7893f84e43 100644
  
      if (MigrationWizardConstants.USES_FAVORITES.includes(key)) {
 diff --git a/browser/components/newtab/AboutNewTabRedirector.sys.mjs b/browser/components/newtab/AboutNewTabRedirector.sys.mjs
-index 33ebe5111a..06792b2d43 100644
+index 33ebe5111a..d255b0b88c 100644
 --- a/browser/components/newtab/AboutNewTabRedirector.sys.mjs
 +++ b/browser/components/newtab/AboutNewTabRedirector.sys.mjs
 @@ -1,643 +1,582 @@
@@ -102014,7 +102038,6 @@ index 33ebe5111a..06792b2d43 100644
 -    return new AboutNewTabRedirectorParent();
 -  }
 -  return new AboutNewTabRedirectorChild();
--}
 +/**
 + * This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -102596,7 +102619,7 @@ index 33ebe5111a..06792b2d43 100644
 +    return new AboutNewTabRedirectorParent();
 +  }
 +  return new AboutNewTabRedirectorChild();
-+}
+ }
 diff --git a/browser/components/preferences/config/appearance.mjs b/browser/components/preferences/config/appearance.mjs
 index 7675fab225..1cb4ff7843 100644
 --- a/browser/components/preferences/config/appearance.mjs
@@ -105122,6 +105145,24 @@ index b2bff0e9f3..103ec10ee3 100644
    },
  
    /**
+diff --git a/browser/components/tabbrowser/Tabbrowser.sys.mjs b/browser/components/tabbrowser/Tabbrowser.sys.mjs
+index 61be1fc614..e05a573fb6 100644
+--- a/browser/components/tabbrowser/Tabbrowser.sys.mjs
++++ b/browser/components/tabbrowser/Tabbrowser.sys.mjs
+@@ -1946,7 +1946,7 @@ export class Tabbrowser {
+       );
+     }
+ 
+-    return parts.filter(p => !!p).join(" ΓÇö ");
++    return parts.filter(p => !!p).join(" / ");
+   }
+ 
+   updateTitlebar() {
+@@ -11197,3 +11197,4 @@ let URILoadingWrapper = {
+     }
+   },
+ };
++
 diff --git a/browser/components/tabbrowser/content/tabgroup-menu.js b/browser/components/tabbrowser/content/tabgroup-menu.js
 index 2ccce2a640..a961326622 100644
 --- a/browser/components/tabbrowser/content/tabgroup-menu.js
@@ -106473,10 +106514,10 @@ index 0000000000..117381b29a
 +}
 diff --git a/browser/content/celesta/celestaHomeChild.sys.mjs b/browser/content/celesta/celestaHomeChild.sys.mjs
 new file mode 100644
-index 0000000000..a797ca831c
+index 0000000000..84fea9c779
 --- /dev/null
 +++ b/browser/content/celesta/celestaHomeChild.sys.mjs
-@@ -0,0 +1,218 @@
+@@ -0,0 +1,225 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -106596,6 +106637,13 @@ index 0000000000..a797ca831c
 +      win.addEventListener("pageshow", () => this.sendAsyncMessage("CelestaHome:StandIn", { state: stateOf(win) }));
 +      return;
 +    }
++    // the start page asks whether any tab is playing sound (hover cues mute)
++    win.addEventListener("Celesta-media-poll", () => {
++      this.sendQuery("CelestaHome:MediaPlaying").then(
++        playing => { try { Services.prefs.setBoolPref("celesta.debug.media", !!playing); } catch {} if (!win.closed) win.dispatchEvent(new win.CustomEvent("Celesta-media", { detail: Cu.cloneInto({ playing: !!playing }, win) })); },
++        () => {}
++      );
++    });
 +    if (this.mode == "live") {
 +      win.addEventListener("Celesta-open", e => this.sendAsyncMessage("CelestaHome:Open", { url: String(e.detail?.url || ""), state: stateOf(win) }));
 +      win.addEventListener("Celesta-state", () => this.sendAsyncMessage("CelestaHome:State", { state: stateOf(win) }));
@@ -106697,10 +106745,10 @@ index 0000000000..a797ca831c
 +}
 diff --git a/browser/content/celesta/celestaHomeParent.sys.mjs b/browser/content/celesta/celestaHomeParent.sys.mjs
 new file mode 100644
-index 0000000000..d1c97859ca
+index 0000000000..9225bb6355
 --- /dev/null
 +++ b/browser/content/celesta/celestaHomeParent.sys.mjs
-@@ -0,0 +1,126 @@
+@@ -0,0 +1,143 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -106767,11 +106815,28 @@ index 0000000000..d1c97859ca
 +    }
 +  }
 +
++  /* any tab in any browser window currently playing sound (media, a call,
++     a video); the start page mutes its hover cues while this is true */
++  anyAudioPlaying() {
++    try {
++      for (const win of Services.wm.getEnumerator("navigator:browser")) {
++        const tabs = win.gBrowser?.tabs;
++        if (!tabs) continue;
++        for (const tab of tabs) {
++          if (tab.hasAttribute("soundplaying")) return true;
++        }
++      }
++    } catch {}
++    return false;
++  }
 +  async receiveMessage(msg) {
 +    // the window's shared start page and its tabs' stand-ins (chrome.js setUpSharedStart)
 +    if (["CelestaHome:StandIn", "CelestaHome:Live", "CelestaHome:Open", "CelestaHome:State"].includes(msg.name)) {
 +      this.browsingContext.topChromeWindow?.CelestaStart?.receive(msg.name, this.browsingContext.top.embedderElement, msg.data);
 +      return null;
++    }
++    if (msg.name == "CelestaHome:MediaPlaying") {
++      return this.anyAudioPlaying();
 +    }
 +    if (msg.name == "CelestaHome:Connect") {
 +      this.connect(msg.data?.url);
@@ -111747,10 +111812,10 @@ index 0000000000..cad8621b82
 +};
 diff --git a/browser/content/celesta/graph.js b/browser/content/celesta/graph.js
 new file mode 100644
-index 0000000000..c5f892c5fe
+index 0000000000..5d9e0e5e1f
 --- /dev/null
 +++ b/browser/content/celesta/graph.js
-@@ -0,0 +1,2504 @@
+@@ -0,0 +1,2509 @@
 +/* ============================================================
 +   Star network graph + right-click floating omnibox
 +   World coordinates: (0,0) = viewport center at scale 1
@@ -112910,8 +112975,8 @@ index 0000000000..c5f892c5fe
 +  let pct = VOLUME_DEFAULT;
 +  try {
 +    if (typeof Services !== "undefined") pct = +Services.prefs.getStringPref(VOLUME_PREF, String(VOLUME_DEFAULT));
-+    else { const s = localStorage.getItem(VOLUME_PREF); if (s != null) pct = +s; }
-+  } catch {}
++    else throw 0;
++  } catch { try { const s = localStorage.getItem(VOLUME_PREF); if (s != null) pct = +s; } catch {} }
 +  if (!Number.isFinite(pct)) pct = VOLUME_DEFAULT;
 +  return Math.max(0, Math.min(1, pct / 100)) * 0.05;
 +}
@@ -112919,15 +112984,15 @@ index 0000000000..c5f892c5fe
 +  pct = Math.max(0, Math.min(100, Math.round(pct)));
 +  try {
 +    if (typeof Services !== "undefined") Services.prefs.setStringPref(VOLUME_PREF, String(pct));
-+    else localStorage.setItem(VOLUME_PREF, String(pct));
-+  } catch {}
++    else throw 0;
++  } catch { try { localStorage.setItem(VOLUME_PREF, String(pct)); } catch {} }
 +  if (audioMaster) audioMaster.gain.value = (pct / 100) * 0.05;
 +}
 +function initVolumeUI() {
 +  const btn = document.getElementById("soundbtn"), box = document.getElementById("volume"), slider = document.getElementById("volumeSlider");
 +  if (!btn || !box || !slider) return;
 +  let pct = VOLUME_DEFAULT;
-+  try { pct = +((typeof Services !== "undefined") ? Services.prefs.getStringPref(VOLUME_PREF, String(VOLUME_DEFAULT)) : (localStorage.getItem(VOLUME_PREF) ?? VOLUME_DEFAULT)); } catch {}
++  try { pct = +((typeof Services !== "undefined") ? Services.prefs.getStringPref(VOLUME_PREF, String(VOLUME_DEFAULT)) : (localStorage.getItem(VOLUME_PREF) ?? VOLUME_DEFAULT)); } catch { try { pct = +(localStorage.getItem(VOLUME_PREF) ?? VOLUME_DEFAULT); } catch {} }
 +  slider.value = Number.isFinite(pct) ? pct : VOLUME_DEFAULT;
 +  for (const type of ["pointerdown", "mousedown", "click", "input", "change"]) box.addEventListener(type, (e) => e.stopPropagation());
 +  box.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
@@ -112970,9 +113035,14 @@ index 0000000000..c5f892c5fe
 +  const idx = (h >>> 0) % steps;
 +  return 60 + Math.floor(idx / CELESTA_STEPS.length) * 12 + CELESTA_STEPS[idx % CELESTA_STEPS.length];
 +}
++/* sound playing anywhere in the browser (another tab, a call, a video) keeps
++   the hover cues silent; the parent actor answers a poll every few seconds */
++let outsideMedia = false;
++addEventListener("Celesta-media", (e) => { outsideMedia = !!e.detail?.playing; });
++setInterval(() => dispatchEvent(new Event("Celesta-media-poll")), 3000);
 +function playCelesta(seed) {
 +  const ac = audioCtx;
-+  if (!ac || ac.state !== "running" || mediaIsPlaying()) return;
++  if (!ac || ac.state !== "running" || outsideMedia || mediaIsPlaying()) return;
 +  const t = ac.currentTime;
 +  if (t - lastNoteAt < 0.05) return;        // one note per visible transition
 +  lastNoteAt = t;
