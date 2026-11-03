@@ -19,3 +19,7 @@ desktop.ini
 
 # Build artefacts
 *.exe
+
+# release staging
+installer/Celesta/
+Celesta-Setup-*.exe

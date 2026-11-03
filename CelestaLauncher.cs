@@ -1,94 +1,99 @@
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.Net;
-using System.Net.Sockets;
-using System.Threading;
+using System.Text;
 
-// Celesta launcher: starts the local start-page server if needed, then the built browser.
+// Celesta launcher: starts the built browser with the packaged start page.
+// The page is set as the homepage because Firefox will not accept a chrome://
+// URL as the startup argument (it opens as about:blank and exits).
 internal static class Program
 {
-    private const string FirefoxRel = @"gecko\obj-ff\dist\bin\firefox.exe";
-    private const string ProfileRel = @"gecko\obj-ff\dist\bin\profile-celesta";
-    private const int Port = 8742;
+    private const string StartPage = "chrome://celesta/content/index.html";
+
+    private static readonly string[] UserPrefs =
+    {
+        "user_pref(\"browser.startup.page\", 1);",
+        "user_pref(\"browser.startup.homepage\", \"" + StartPage + "\");",
+        "user_pref(\"browser.startup.homepage_override.mstone\", \"ignore\");",
+        "user_pref(\"browser.aboutwelcome.enabled\", false);",
+        "user_pref(\"browser.shell.checkDefaultBrowser\", false);",
+        "user_pref(\"browser.shell.didSkipDefaultBrowserCheckOnFirstRun\", true);",
+        "user_pref(\"datareporting.policy.dataSubmissionEnabled\", false);",
+        "user_pref(\"datareporting.healthreport.uploadEnabled\", false);",
+        "user_pref(\"toolkit.telemetry.enabled\", false);",
+        "user_pref(\"toolkit.telemetry.unified\", false);",
+        "user_pref(\"app.shield.optoutstudies.enabled\", false);",
+        "user_pref(\"browser.newtabpage.activity-stream.feeds.section.topstories\", false);",
+        "user_pref(\"browser.newtabpage.activity-stream.showSponsored\", false);",
+        "user_pref(\"extensions.pocket.enabled\", false);",
+        "user_pref(\"browser.tabs.inTitlebar\", 0);",
+        "user_pref(\"toolkit.legacyUserProfileCustomizations.stylesheets\", true);",
+    };
 
     [STAThread]
     private static void Main(string[] args)
     {
         string root = AppDomain.CurrentDomain.BaseDirectory;
-        string firefox = Path.Combine(root, FirefoxRel);
-        string profile = Path.Combine(root, ProfileRel);
-
-        if (!File.Exists(firefox))
+        string firefox = FirstExisting(
+            Path.Combine(root, @"browser\firefox.exe"),
+            Path.Combine(root, @"gecko\obj-ff\dist\bin\firefox.exe"));
+        if (firefox == null)
         {
-            MessageBoxFallback("Celesta needs a build first:\n\n" + firefox +
-                               "\n\nRun ./mach build in the gecko tree.");
+            Log("No browser found. Expected browser\\firefox.exe or gecko\\obj-ff\\dist\\bin\\firefox.exe under " + root);
             return;
         }
 
-        EnsureServer(root);
-        Thread.Sleep(400);
+        string profile = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Celesta", "profile");
+        Directory.CreateDirectory(profile);
+
+        WriteUserJs(profile);
+        WriteUserChrome(profile);
 
         var psi = new ProcessStartInfo(firefox)
         {
             UseShellExecute = false,
             WorkingDirectory = Path.GetDirectoryName(firefox),
-            Arguments = "-no-remote -profile \"" + profile + "\"" +
-                        " --window-size=1280,860 \"http://127.0.0.1:" + Port + "/index.html\""
+            Arguments = "-no-remote -profile \"" + profile + "\" --window-size=1280,860"
         };
 
         try { Process.Start(psi); }
-        catch (Exception ex) { MessageBoxFallback("Could not start Celesta:\n\n" + ex.Message); }
+        catch (Exception ex) { Log("Could not start Celesta: " + ex.Message); }
     }
 
-    private static void EnsureServer(string root)
-    {
-        if (PortOpen()) return;
-
-        string home = Path.Combine(root, "home");
-        if (!Directory.Exists(home)) return;
-
-        string[] pythons =
-        {
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                         @"Programs\Python\Python312\python.exe"),
-            "python.exe",
-            "py.exe"
-        };
-
-        foreach (string python in pythons)
-        {
-            try
-            {
-                var psi = new ProcessStartInfo(python)
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    WorkingDirectory = home,
-                    Arguments = "-m http.server " + Port + " --bind 127.0.0.1 --directory \"" + home + "\""
-                };
-                Process.Start(psi);
-                for (int i = 0; i < 40 && !PortOpen(); i++) Thread.Sleep(100);
-                if (PortOpen()) return;
-            }
-            catch { }
-        }
-    }
-
-    private static bool PortOpen()
+    private static void WriteUserJs(string profile)
     {
         try
         {
-            using (var client = new TcpClient())
-            {
-                var task = client.ConnectAsync(IPAddress.Loopback, Port);
-                return task.Wait(250) && client.Connected;
-            }
+            File.WriteAllText(Path.Combine(profile, "user.js"),
+                "// Celesta defaults, rewritten on every launch.\n" +
+                string.Join("\n", UserPrefs) + "\n", new UTF8Encoding(false));
         }
-        catch { return false; }
+        catch (Exception ex) { Log("user.js: " + ex.Message); }
     }
 
-    private static void MessageBoxFallback(string text)
+    private static void WriteUserChrome(string profile)
+    {
+        try
+        {
+            string chrome = Path.Combine(profile, "chrome");
+            Directory.CreateDirectory(chrome);
+            File.WriteAllText(Path.Combine(chrome, "userChrome.css"),
+                "@namespace url(\"http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul\");\n" +
+                "#TabsToolbar, #titlebar, #navigator-toolbox, #PersonalToolbar, #urlbar-container, #searchbar { display: none !important; }\n" +
+                "#main-window { background: #000 !important; }\n");
+        }
+        catch (Exception ex) { Log("userChrome.css: " + ex.Message); }
+    }
+
+    private static string FirstExisting(params string[] paths)
+    {
+        foreach (string p in paths) if (File.Exists(p)) return p;
+        return null;
+    }
+
+    private static void Log(string text)
     {
         try
         {
