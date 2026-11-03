@@ -21,4 +21,4 @@ ac_add_options --with-ccache=sccache
 
 # CELESTA identity: custom branding dir (copy of nightly, renamed to CELESTA,
 # clean prefs — no firstrun/whatsnew/update URLs; Firefox icons kept)
-ac_add_options --with-branding=browser/branding/CELESTA
+ac_add_options --with-branding=browser/branding/celesta

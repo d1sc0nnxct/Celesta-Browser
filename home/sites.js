@@ -305,15 +305,22 @@ const SITES = [
    them before they open. */
 if (typeof RADAR_SITES !== "undefined") {
   const byDomain = new Map(SITES.filter((s) => !s.path).map((s) => [s.domain, s]));
+  // The raw dataset is ~1.2M domains; laying that out never finishes. Radar is
+  // rank-ordered, so the head of the list is the traffic that belongs on a
+  // start page. Keep the dataset intact, cap what the graph has to place.
+  const IMPORT_LIMIT = 400;
+  let imported = 0;
   for (const r of RADAR_SITES) {
-    const [domain, name, cats, pop, risk, en] = Array.isArray(r) ? r : [r.domain, r.name, r.cat, r.pop, r.risk];
+    if (imported >= IMPORT_LIMIT) break;
+    const [domain, name, cats, pop, risk, en] = Array.isArray(r) ? r : [r.domain, r.name, r.cat, r.pop, r.risk, r.en];
     if (byDomain.has(domain) || byDomain.has("www." + domain)) continue;
     cats.split("|").forEach((cat, i) => {
       const site = { id: "r:" + domain + (i ? "#" + cat : ""), name, domain, cat, pop };
       if (risk) site.risk = risk;
       if (en) site.en = en;
       SITES.push(site);
-      if (!i) byDomain.set(domain, site);
+      if (!i) { byDomain.set(domain, site); imported++; }
     });
   }
 }
+
