@@ -11,13 +11,23 @@ into it.
 | Path | Purpose |
 | --- | --- |
 | `home/` | The start page: WebGL sky, GPU bubble field, warp lock-on, right-click omnibox. Runs standalone over HTTP. |
-| `CelestaLauncher.cs` | `Celesta.exe`: starts the local page server, then the built browser with `profile-celesta`. |
+| `CelestaLauncher.cs` | `Celesta.exe`: seeds the profile prefs and starts the built browser on `chrome://celesta/content/index.html`. |
 | `patches/firefox-celesta.patch` | Full diff against `mozilla-firefox/firefox` `main`: branding, newtab redirect, `browser/content/celesta/` chrome, prefs. |
+| `installer/` | NSIS script + staging script that trims the runtime and produces `Celesta-Setup-0.1.0.exe`. |
 | `sites-radar.backup.js` | Traffic data: Cloudflare Radar rankings plus CrUX origins. |
 | `mozconfig` | Build configuration (`--with-branding=browser/branding/celesta`). |
 | `docs/home.png` | The screenshot above, captured by `home/capture.mjs`. |
 
 The 1 GB Firefox clone and its 34 GB build output are deliberately not in this repo.
+
+## Start page behaviour
+
+- Hovering a bubble plays that site's own celesta note — a deterministic pitch from a
+  four-octave pentatonic, faint, and silent while media is playing.
+- The graph ships an 8,000-domain head for an instant start; the full 1.2M-domain
+  catalogue loads in the background and powers search and the site count.
+- Left click locks on and opens the site, right click opens the site menu, right click on
+  empty space opens the omnibox.
 
 ## Run the start page
 
