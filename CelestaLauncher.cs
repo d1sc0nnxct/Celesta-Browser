@@ -27,7 +27,6 @@ internal static class Program
         "user_pref(\"browser.newtabpage.activity-stream.showSponsored\", false);",
         "user_pref(\"extensions.pocket.enabled\", false);",
         "user_pref(\"browser.tabs.inTitlebar\", 1);",
-        "user_pref(\"Celesta.bars.autohide\", false);",
     };
 
     [STAThread]
