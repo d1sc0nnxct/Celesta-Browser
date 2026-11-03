@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Start</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="style.css?v=32">
+</head>
+<body>
+
+  <!-- WebGL space background (nebulae + galactic band + stars; moves with the view) -->
+  <canvas id="space" aria-hidden="true"></canvas>
+
+  <!-- Shooting stars: unvisited sites streaking behind the network (click to warp) -->
+  <div id="shooters" aria-hidden="true"></div>
+
+  <!-- Every site as a GPU circle (bubbles.js); bubbles big enough on screen also get a DOM element -->
+  <canvas id="bubbles" aria-hidden="true"></canvas>
+
+  <!-- Pannable/zoomable graph scene: world origin = viewport center -->
+  <div id="scene">
+    <svg id="edges" aria-hidden="true"></svg>
+    <div id="nodes"></div>
+  </div>
+
+  <!-- Persistent but dim discoverability hint (there is no search bar) -->
+  <div id="sitecount" role="status"></div>
+  <div id="hint" aria-hidden="true">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="6" y="2" width="12" height="20" rx="6"/><path d="M12 6v4"/>
+    </svg>
+    right-click anywhere to search
+  </div>
+
+  <!-- Self-contained floating bubble chrome: tabs on top, bookmarks below -->
+  <div id="chrome">
+    <div class="chrome-title" aria-label="Umbra">UMBRA — Star Network</div>
+    <div class="cluster" id="tabbar"></div>
+    <div class="cluster" id="bookmarks"></div>
+  </div>
+
+  <!-- Floating omnibox: appears where you right-click, clamped inside window -->
+  <div id="omnibox" class="hidden">
+    <div class="omni-row">
+      <svg class="omni-glyph" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>
+      </svg>
+      <input id="omni" type="text" placeholder="Search or enter address" autocomplete="off" spellcheck="false">
+      <kbd>esc</kbd>
+    </div>
+    <ul id="suggestions" class="hidden"></ul>
+  </div>
+
+  <!-- Right-click dropdown menu for bubbles (open / new tab / copy / search) -->
+  <div id="ctxmenu" class="hidden"></div>
+
+  <!-- Warp overlay: fades the page out while the camera locks onto the target -->
+  <div id="warp"></div>
+
+  <script src="space.js?v=32"></script>
+  <script src="bubbles.js"></script>
+  <script src="sites-radar.js"></script>
+  <script src="sites.js"></script>
+  <script src="graph.js?v=32"></script>
+</body>
+</html>

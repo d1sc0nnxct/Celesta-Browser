@@ -1,0 +1,18 @@
+# Firefox source fork (1 GB shallow clone, 34 GB build output)
+gecko/
+
+# Local toolchains / logs
+.tools/
+tools/
+logs/
+
+# Large generated site datasets (fetched at runtime)
+sites-radar.js
+home/sites-radar.js
+home/sites-layout.js
+
+# OS / editor noise
+Thumbs.db
+desktop.ini
+*.tmp
+*.log

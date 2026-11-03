@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Umbra Home — Test Harness</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #000; color: rgba(255,255,255,0.85);
+    font: 13px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace;
+    padding: 20px 24px;
+  }
+  h1 { font-size: 15px; font-weight: 600; letter-spacing: .04em; margin: 0 0 4px; color: #fff; }
+  .sub { color: rgba(255,255,255,0.45); font-size: 11.5px; margin-bottom: 16px; max-width: 900px; }
+  #bar { display: flex; gap: 14px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  button {
+    font: inherit; font-size: 12px; padding: 7px 14px; border-radius: 8px;
+    background: rgba(255,255,255,0.06); color: #fff;
+    border: 1px solid rgba(139,147,255,0.4); cursor: pointer;
+  }
+  button:hover { background: rgba(139,147,255,0.16); }
+  button[disabled] { opacity: .4; cursor: default; }
+  #tally { font-size: 12px; color: rgba(255,255,255,0.6); }
+  #tally b { color: #fff; }
+  .pass { color: #7ee787; } .fail { color: #ff7b72; } .skip { color: rgba(255,255,255,0.35); }
+  #log { display: flex; flex-direction: column; gap: 3px; max-width: 1100px; }
+  .row { display: grid; grid-template-columns: 18px 1fr auto; gap: 10px; align-items: baseline;
+         padding: 3px 6px; border-radius: 6px; }
+  .row:nth-child(odd) { background: rgba(255,255,255,0.02); }
+  .row .m { color: rgba(255,255,255,0.85); }
+  .row .d { color: rgba(255,255,255,0.4); font-size: 11px; text-align: right; }
+  .row.fail { background: rgba(255,123,114,0.08); }
+  .hdr { grid-column: 1 / -1; margin: 12px 0 2px; color: #8b93ff; font-weight: 600;
+         font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+  .hdr:first-child { margin-top: 0; }
+  /* the app under test: off-screen, fixed size => deterministic layout */
+  #stage { position: fixed; left: -20000px; top: 0; width: 1000px; height: 700px; }
+  #stage iframe { width: 1000px; height: 700px; border: 0; background: #000; }
+</style>
+</head>
+<body>
+<h1>&#10022; UMBRA HOME &mdash; TEST HARNESS</h1>
+<div class="sub">Runs the real home page in a sandboxed, off-screen iframe and asserts its behaviour:
+structure, shader + GPU budget, force layout, shooting stars, right-click menu, Back navigation,
+zoom limits, and bubble styling. Nothing here touches your live Start tab, and no test navigates
+off-site. The iframe is off-screen, so the harness drives the app's frame loop directly with
+monotonic timestamps rather than relying on requestAnimationFrame.</div>
+<div id="bar">
+  <button id="run" disabled>Running&hellip;</button>
+  <button id="again" disabled>Re-run</button>
+  <span id="tally">idle</span>
+</div>
+<div id="log"></div>
+<div id="stage"><iframe id="app" title="home under test"></iframe></div>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const log = $("#log"), tally = $("#tally"), runBtn = $("#run"), againBtn = $("#again");
+const frameEl = $("#app");
+let total = 0, passed = 0;
+
+function row(icon, cls, msg, detail) {
+  const el = document.createElement("div");
+  el.className = "row " + cls;
+  const i = document.createElement("span"); i.className = cls; i.textContent = icon;
+  const m = document.createElement("span"); m.className = "m"; m.textContent = msg;
+  const d = document.createElement("span"); d.className = "d"; d.textContent = detail == null ? "" : String(detail);
+  el.append(i, m, d);
+  log.appendChild(el);
+}
+function group(name) {
+  const el = document.createElement("div");
+  el.className = "row hdr";
+  el.textContent = name;
+  log.appendChild(el);
+}
+function check(ok, msg, detail) {
+  total++; if (ok) passed++;
+  row(ok ? "\u2713" : "\u2717", ok ? "pass" : "fail", msg, detail);
+  tally.innerHTML = "<b>" + passed + "</b> / " + total + " passing" +
+    (passed < total ? " \u2014 <span class=\"fail\">" + (total - passed) + " failing</span>"
+                    : " \u2014 <span class=\"pass\">all green</span>");
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* run a snippet inside the app frame; returns { value } or { error } */
+function ev(code) {
+  try { return { value: frameEl.contentWindow.eval(code) }; }
+  catch (e) { return { error: String((e && e.message) || e) }; }
+}
+function must(r, label) {
+  if (!r) { check(false, label, "no result"); return undefined; }
+  if (r.error) { check(false, label, r.error); return undefined; }
+  return r.value;
+}
+
+/* helpers installed once in the app window:
+   __step(n)  drive the frame loop n times with strictly increasing timestamps
+              (a constant t clamps dt and freezes every ease)
+   __num(s)   parse the leading number out of a WAAPI transform like "translate(12.3px, -4.5px)"
+              — must use parseFloat, Number() yields NaN on the "px" suffix               */
+const HELPER = `
+  window.__T = performance.now();
+  window.__step = (n, dt) => { dt = dt || 16.7; for (let i = 0; i < n; i++) { window.__T += dt; frame(window.__T); } return true; };
+  window.__num = (s) => String(s).slice(String(s).indexOf("(") + 1).split(")")[0].split(",").map(v => parseFloat(v));
+  window.__tr  = (s) => parseFloat(String(s).slice(String(s).indexOf("(") + 1));
+`;
+
+async function boot() {
+  frameEl.src = "index.html?test=" + Date.now();
+  await new Promise((res) => frameEl.addEventListener("load", res, { once: true }));
+  ev(HELPER);
+  for (let i = 0; i < 60; i++) {
+    const r = ev("document.querySelectorAll('.node').length");
+    if (!r.error && r.value > 0) return;
+    await sleep(150);
+  }
+  throw new Error("app never initialised");
+}
+
+/* ---------------- suites ---------------- */
+
+async function suiteStructure() {
+  group("structure");
+  const v = must(ev(`({
+      main: document.querySelectorAll(".node:not(.sub)").length,
+      sub:  document.querySelectorAll(".node.sub").length,
+      edges: document.querySelectorAll("#edges line").length,
+      ctx:  !!document.querySelector("#ctxmenu"),
+      space: Space.ok })`), "read graph structure");
+  if (!v) return;
+  check(v.main === 30, "30 main bubbles", v.main);
+  check(v.sub === 32, "32 sub bubbles", v.sub);
+  check(v.edges === 70, "70 related-only edges", v.edges);
+  check(v.ctx, "right-click menu element present");
+  check(v.space, "WebGL shader compiled");
+}
+
+async function suiteShader() {
+  group("shader + GPU budget");
+  const v = must(ev(`(() => {
+      const s = [ { x: 0, y: 0 }, { x: 300, y: -200 }, { x: -450, y: 120 } ]
+        .map(p => { Space.draw(555555, p, 1); return Space.sample(); });
+      return { samples: s, any: s.some(x => x > 0) }; })()`), "draw + sample sky");
+  if (v) check(v.any, "sky renders non-black at 3 pan offsets", v.samples.join(", "));
+
+  const g = must(ev(`(() => {
+      const c = document.getElementById("space");
+      const gl = c.getContext("webgl");
+      const a = gl.getContextAttributes ? gl.getContextAttributes() : {};
+      // backing store vs CSS *viewport* px (clientWidth would be the stretched box)
+      const scale = (c.width * c.height) / (innerWidth * innerHeight);
+      const br = c.getBoundingClientRect();   // CSS box must fill the viewport:
+      const cover = Math.abs(br.width - innerWidth) <= 2 && Math.abs(br.height - innerHeight) <= 2;
+      const bd = ["#omnibox", "#ctxmenu", ".cluster", "#hint"].map(sel => {
+        const el = document.querySelector(sel);
+        if (!el) return "missing";
+        const s = getComputedStyle(el);
+        return s.backdropFilter || s.webkitBackdropFilter || "none";
+      });
+      return { w: c.width, h: c.height, vw: innerWidth, vh: innerHeight,
+               scalePct: Math.round(scale * 100), pp: a.powerPreference,
+               cover, cssBox: [Math.round(br.width), Math.round(br.height)],
+               noBackdrop: bd.every(x => x === "none"), bd }; })()`),
+    "read canvas + context attrs");
+  if (g) {
+    check(g.scalePct >= 80 && g.scalePct <= 180, "sky renders at near-native resolution", g.w + "\u00d7" + g.h + " vs viewport " + g.vw + "\u00d7" + g.vh + " \u2192 " + g.scalePct + "%");
+    check(g.pp === "low-power", "context requests the low-power GPU", g.pp);
+    check(g.cover, "sky canvas covers the whole viewport (no black rectangle)", g.cssBox.join("\u00d7") + " vs " + g.vw + "\u00d7" + g.vh);
+    check(g.noBackdrop, "no backdrop-filter over the WebGL canvas (artifact-free)", g.bd.join(", "));
+  }
+
+  const t = must(ev(`(() => {
+      let n = 0;
+      const real = Space.draw;
+      Space.draw = (...a) => { n++; return real(...a); };
+      __step(60);                       // 60 frames @16.7ms ~= 1s
+      Space.draw = real;
+      return n; })()`), "measure sky draw rate");
+  if (t !== undefined) check(t >= 18 && t <= 36, "sky throttled to ~30fps", t + " draws per 60 frames");
+}
+
+async function suiteLayout() {
+  group("force layout");
+  const v = must(ev(`(() => {
+      const mains = ringNodes;
+      const half = n => bubbleSize(n) / 2;
+      const dist = (a, b) => Math.hypot(a.home.x - b.home.x, a.home.y - b.home.y);
+      const links = new Set(SEED.links.map(([a, b]) => [a, b].sort().join("|")));
+      const L = [], U = [];
+      for (let i = 0; i < mains.length; i++) for (let j = i + 1; j < mains.length; j++) {
+        const k = [mains[i].id, mains[j].id].sort().join("|");
+        (links.has(k) ? L : U).push(dist(mains[i], mains[j]));
+      }
+      const med = a => { const s = [...a].sort((x, y) => x - y); return Math.round(s[s.length >> 1]); };
+      let gap = Infinity;
+      for (let i = 0; i < mains.length; i++) for (let j = i + 1; j < mains.length; j++)
+        gap = Math.min(gap, dist(mains[i], mains[j]) - half(mains[i]) - half(mains[j]));
+      const limX = innerWidth / 2 - 80, limY = innerHeight / 2 - 72;
+      const inBounds = mains.every(n => Math.abs(n.home.x) <= limX + 1 && Math.abs(n.home.y) <= limY + 1);
+      const center = mains.filter(n => Math.abs(n.home.x) <= 110 && Math.abs(n.home.y) <= 90).length;
+      // popularity stratification: popular nearer the middle, niche nearer the rim
+      const rows = mains.map(n => ({ pop: n.pop || 3, d: Math.hypot(n.home.x, n.home.y) }));
+      const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+      const mp = mean(rows.map(r => r.pop)), md = mean(rows.map(r => r.d));
+      let num = 0, dp = 0, dd = 0;
+      for (const r of rows) { const a = r.pop - mp, b = r.d - md; num += a * b; dp += a * a; dd += b * b; }
+      const corr = +(num / Math.sqrt(dp * dd)).toFixed(3);
+      return { ml: med(L), mu: med(U), gap: Math.round(gap), inBounds, center, corr }; })()`),
+    "measure layout");
+  if (!v) return;
+  check(v.ml < v.mu * 0.8, "related bubbles cluster", "linked " + v.ml + "px vs unlinked " + v.mu + "px");
+  check(v.gap >= 13, "no bubble overlap", v.gap + "px min gap");
+  check(v.inBounds, "all bubbles inside the viewport bounds");
+  check(v.center >= 1, "centre is filled (no circular hole)", v.center + " central bubbles");
+  check(v.corr <= -0.15, "popular sites hug the middle, niche sites the rim", "r = " + v.corr);
+}
+
+async function suiteShooters() {
+  group("shooting stars");
+  const v = must(ev(`(() => {
+      Object.defineProperty(document, "hidden", { value: false, configurable: true });
+      document.querySelectorAll("#shooters .shoot").forEach(el => el.remove());
+      activeShots.clear(); activeShotSites.clear();
+      visited.clear();                            // the pool may be empty from a real session
+      let spawned = 0;
+      for (let i = 0; i < 6; i++) if (spawnShootingStar()) spawned++;
+      __step(1);                                   // first frame projects to screen
+      const onEdge = (x, y) => x <= 1 || x >= innerWidth - 1 || y <= 1 || y >= innerHeight - 1;
+      const stars = [...document.querySelectorAll("#shooters .shoot")].map(el => {
+        const s = el._star;
+        const face = el.querySelector(".face"), head = el.querySelector(".head"),
+              img = el.querySelector(".head img"), nm = el.querySelector(".nm"),
+              trail = el.querySelector(".trail");
+        const hr = head.getBoundingClientRect(), tcs = getComputedStyle(trail);
+        return {
+          site: el.title,
+          speed: Math.round(s.speed),
+          tl: parseFloat(getComputedStyle(el).getPropertyValue("--tl")),
+          // read computed box values: the star is rotated, so its bounding
+          // rect is an axis-aligned shadow of the 120px strip, not its size
+          trailW: parseFloat(tcs.width),
+          trailFromEdge: Math.abs(parseFloat(tcs.left) + 135) <= 0.5,
+          edges: onEdge(s.sx0, s.sy0) && onEdge(s.sx1, s.sy1),
+          pathRatio: +(Math.hypot(s.sx1 - s.sx0, s.sy1 - s.sy0) / Math.hypot(innerWidth, innerHeight)).toFixed(2),
+          // .face is a SIBLING of the rotated .aim — it must never carry a
+          // rotation of its own, otherwise the icon/label tip sideways
+          upright: !face.style.transform && getComputedStyle(face).transform === "none",
+          faceHasHead: !!el.querySelector(".face .head"),
+          headW: Math.round(hr.width),
+          imgW: Math.round(img.getBoundingClientRect().width),
+          labelTop: parseFloat(getComputedStyle(nm).top),
+          trailShadow: getComputedStyle(trail).boxShadow,
+          trailGlow: getComputedStyle(trail, "::before").filter,
+          headBg: getComputedStyle(head).backgroundColor,
+          grab: !!el.querySelector(".grab")
+        };
+      });
+      // world anchoring: shifting the page must move the star with it
+      let movedWithPage = null, fixedSize = null, fade = null;
+      const el = document.querySelector("#shooters .shoot");
+      if (el) {
+        const screenX = () => parseFloat(el.style.transform.slice(el.style.transform.indexOf("(") + 1));
+        const headW = () => el.querySelector(".head").getBoundingClientRect().width;
+        const before = screenX();
+        pan.x += 120; __step(1);
+        movedWithPage = Math.abs((screenX() - before) - 120) < 10;
+        pan.x -= 120;
+        const w1 = headW();
+        zoom = 2; __step(1);
+        fixedSize = Math.abs(headW() - w1) < 0.5 && w1 === 30;
+        zoom = 1; __step(1);
+        // fade order at the edge: bubble first, trail second (reverse on exit)
+        const st = el._star;
+        st.wx = (3 - pan.x) / zoom; st.wy = (innerHeight / 2 - pan.y) / zoom; __step(1);
+        const edgeFace = parseFloat(el.querySelector(".face").style.opacity || "0");
+        const edgeAim = parseFloat(el.querySelector(".aim").style.opacity || "0");
+        st.wx = (innerWidth / 2 - pan.x) / zoom; st.wy = (innerHeight / 2 - pan.y) / zoom; __step(1);
+        const midFace = parseFloat(el.querySelector(".face").style.opacity || "0");
+        const midAim = parseFloat(el.querySelector(".aim").style.opacity || "0");
+        fade = { edgeFace, edgeAim, midFace, midAim };
+      }
+      delete document.hidden;
+      const sites = stars.map(s => s.site);
+      return {
+        spawned, live: stars.length,
+        unique: new Set(sites).size === sites.length,
+        allEdges: stars.every(s => s.edges),
+        speeds: stars.map(s => s.speed),
+        speedOk: stars.every(s => s.speed >= 190 && s.speed <= 265),
+        tlFixed: stars.every(s => s.tl === 120 && s.trailW === 120),
+        trailFromEdge: stars.every(s => s.trailFromEdge),
+        upright: stars.every(s => s.upright),
+        faceHasHead: stars.every(s => s.faceHasHead),
+        pageCross: stars.every(s => s.pathRatio >= 1.3),
+        headFilled: stars.every(s => s.headW === 30 && s.imgW === 26),
+        labelBottom: stars.every(s => s.labelTop === 24),
+        trailClean: stars.every(s => s.trailShadow === "none"),
+        trailGlow: stars.every(s => s.trailGlow.includes("blur")),
+        headTransparent: stars.every(s => s.headBg === "rgba(0, 0, 0, 0)"),
+        grab: stars.every(s => s.grab),
+        movedWithPage, fixedSize, fade
+      }; })()`), "spawn + inspect stars");
+  if (!v) { check(false, "spawn shooting stars", v && v.error); return; }
+  check(v.spawned <= 3, "at most 3 concurrent stars", v.spawned + " of 6 attempts");
+  check(v.unique, "no duplicate site on screen at once");
+  check(v.allEdges, "stars cross edge-to-edge");
+  check(v.speedOk, "speed inside the 190\u2013265 px/s band", v.speeds.join(", "));
+  check(v.tlFixed, "fixed 120px trail for every star (set size)");
+  check(v.trailFromEdge, "trail begins at the bubble's rear edge");
+  check(v.upright, "icon + label stay upright (.face never rotated)");
+  check(v.pageCross, "star path spans the page (\u22651.3\u00d7 viewport diagonal)", v.pageCross ? "ok" : "short path");
+  check(v.faceHasHead, "head lives in the upright .face carrier");
+  check(v.headFilled, "icon fills the 30px head (26px favicon)");
+  check(v.labelBottom, "label sits below the bubble", "top 24px");
+  check(v.trailClean, "trail ends in a soft fade (no box-shadow cap)");
+  check(v.trailGlow, "trail glow is a blurred twin of the same gradient");
+  check(v.headTransparent, "shooting-star bubble is hollow, glow only", "transparent");
+  check(v.grab, "generous invisible grab area around the head");
+  check(v.movedWithPage === true, "star is anchored to the page (pans with the graph)");
+  check(v.fixedSize === true, "star keeps a fixed 30px size when zooming", v.fixedSize === false ? "changed" : "30px");
+  check(v.fade && v.fade.edgeFace > 0.15 && v.fade.edgeAim === 0,
+        "bubble fades in before the trail (trail leaves first too)",
+        v.fade ? "bubble " + v.fade.edgeFace + " vs trail " + v.fade.edgeAim : "n/a");
+  check(v.fade && v.fade.midFace === 1 && v.fade.midAim === 1,
+        "bubble + trail fully visible in the middle");
+}
+
+async function suiteMenu() {
+  group("right-click menu");
+  const v = must(ev(`(() => {
+      hideOmnibox(); closeCtxMenu();
+      const gh = graphNodes.find(n => n.id === "gh");
+      gh.el.dispatchEvent(new MouseEvent("contextmenu",
+        { bubbles: true, cancelable: true, clientX: 320, clientY: 260 }));
+      const open = ctxMenuOpen();
+      const items = [...document.querySelectorAll("#ctxmenu .ctx-item")].map(b => b.textContent.trim());
+      const omniClosed = !omniboxOpen();
+      const sb = [...document.querySelectorAll(".ctx-item")].find(b => b.dataset.a === "search");
+      if (sb) sb.click();
+      const out = { open, items, omniClosed,
+                    val: omni.value, menuClosed: !ctxMenuOpen(), omniOpen: omniboxOpen() };
+      hideOmnibox(); closeCtxMenu();
+      return out; })()`), "open menu on the GitHub bubble");
+  if (!v) { check(false, "open context menu", v && v.error); return; }
+  check(v.open, "menu opens on bubble right-click");
+  check(v.items.length === 4, "4 menu items", v.items.join(" / "));
+  check(v.omniClosed, "omnibox stays closed while the menu is open");
+  check(v.val === "site:github.com ", "'Search this site' prefills site: omnibox", JSON.stringify(v.val));
+  check(v.menuClosed && v.omniOpen, "search action closes the menu, opens the omnibox");
+}
+
+async function suiteBack() {
+  group("back navigation");
+  const v = must(ev(`(() => {
+      hideOmnibox(); closeCtxMenu();
+      const gh = graphNodes.find(n => n.id === "gh");
+      applyLock("gh"); safeSSSet(LOCK_KEY, "gh");          // simulate a completed warp
+      const before = document.querySelectorAll(".node.locked").length;
+      let ev2;
+      try { ev2 = new PageTransitionEvent("pageshow", { persisted: true }); }
+      catch (e) { ev2 = new Event("pageshow"); Object.defineProperty(ev2, "persisted", { value: true }); }
+      window.dispatchEvent(ev2);                            // bfcache restore == Back
+      const after = document.querySelectorAll(".node.locked").length;
+      const spent = safeSSGet(LOCK_KEY) === "";
+      const target = camReset && camReset.node ? camReset.node.id : null;
+      // Measure on the frame the ease ends: afterwards the bubble keeps its
+      // idle orbit, so the camera legitimately stays put while it drifts.
+      let guard = 0;
+      while (camReset && guard++ < 400) __step(1);
+      const sx = pan.x + gh.pos.x * zoom, sy = pan.y + gh.pos.y * zoom;
+      const out = {
+        before, after, spent, target,
+        centred: Math.abs(sx - innerWidth / 2) < 3 && Math.abs(sy - innerHeight / 2) < 3,
+        zoomOut: Math.abs(zoom - 1) < 0.02
+      };
+      applyLock(null); safeSSSet(LOCK_KEY, ""); camReset = null;
+      return out; })()`), "simulate a warp + Back");
+  if (!v) { check(false, "simulate back navigation", v && v.error); return; }
+  check(v.before === 1, "lock highlights the target during the warp");
+  check(v.after === 0, "highlight cleared when returning via Back", v.after + " still locked");
+  check(v.spent, "lock is spent, not sticky");
+  check(v.target === "gh", "camera reframes onto the returned bubble", v.target);
+  check(v.centred, "returned bubble eases to the screen centre");
+  check(v.zoomOut, "camera zoomed back out to 1.0");
+}
+
+async function suiteWarp() {
+  group("lock-on");
+  const v = must(ev(`(() => {
+      hideOmnibox(); closeCtxMenu();
+      pan = { x: innerWidth / 2, y: innerHeight / 2 };
+      zoom = 1; zoomTarget = 1; zoomAnchor = null; camReset = null;
+      warp = null;
+      const main = ringNodes.find(n => n.id === "gh");
+      const sub = graphNodes.find(n => n.id === "gh-s0") || graphNodes.find(n => n.sub);
+
+      // a real connection must start while the animation is still playing
+      const seen = [];
+      const realFetch = window.fetch;
+      window.fetch = (...a) => { seen.push(String(a[0])); return realFetch.apply(window, a); };
+      warpTo("https://example.com/", { node: main });
+      window.fetch = realFetch;
+      const mainTarget = warp && warp.target.id;
+      const centreOn = (n) => {
+        warp.t0 = performance.now() - warp.dur + 1;    // last frame, no navigation
+        stepWarp(performance.now());
+        const sx = pan.x + n.pos.x * zoom, sy = pan.y + n.pos.y * zoom;
+        return { dx: sx - innerWidth / 2, dy: sy - innerHeight / 2 };
+      };
+      const mc = centreOn(main);
+      const mainLocked = main.el.classList.contains("locked");
+      warp = null; main.el.classList.remove("locked");
+
+      warpTo("https://example.com/", { node: sub });
+      const subTarget = warp && warp.target.id;
+      const sc = centreOn(sub);
+      const subLocked = sub.el.classList.contains("locked");
+      warp = null; sub.el.classList.remove("locked");
+      applyLock(null);
+
+      const prefetch = seen.some(u => u.includes("example.com"));
+      const preconnect = [...document.head.querySelectorAll('link[rel="preconnect"]')]
+        .some(l => l.href.includes("example.com"));
+
+      // --- magnetism A/B from an identical state + clock ---
+      zoom = 1; zoomTarget = 1; zoomAnchor = null;
+      pan = { x: innerWidth / 2, y: innerHeight / 2 + 45 };
+      pointerScreen = { x: -1e5, y: -1e5 };
+      for (let i = 0; i < 90; i++) __step(1);
+      const mag = graphNodes.find(n => n.sub && n.parent);
+      const snap = { pos: { ...mag.pos }, open: mag._open, T: __T, lastT,
+                     parent: { ...mag.parent.pos } };
+      __step(40);
+      const a = { ...mag.pos };
+      mag.pos = { ...snap.pos }; mag._open = snap.open;
+      mag.parent.pos = { ...snap.parent };
+      __T = snap.T; lastT = snap.lastT;
+      const psx = pan.x + a.x * zoom, psy = pan.y + a.y * zoom;
+      pointerScreen = { x: psx + 70, y: psy };
+      __step(40);
+      const b = { ...mag.pos };
+      pointerScreen = { x: -1e5, y: -1e5 };
+      return {
+        mainTarget, mc, mainLocked, subTarget, subId: sub.id, sc, subLocked,
+        prefetch, preconnect,
+        magGain: Math.hypot(b.x - a.x, b.y - a.y), magRight: b.x - a.x
+      }; })()`), "exercise lock-on + magnetic subs");
+  if (!v) { check(false, "run lock-on", v && v.error); return; }
+  check(v.mainTarget === "gh", "warp targets the clicked main bubble", v.mainTarget);
+  check(v.mc && Math.abs(v.mc.dx) < 1.5 && Math.abs(v.mc.dy) < 1.5,
+        "main bubble locked dead-centre at the end of the dive",
+        v.mc ? v.mc.dx.toFixed(2) + ", " + v.mc.dy.toFixed(2) + " px" : "n/a");
+  check(v.mainLocked, "main bubble highlighted during lock-on");
+  check(v.subTarget === v.subId, "warp targets the clicked SUB bubble", v.subTarget);
+  check(v.sc && Math.abs(v.sc.dx) < 1.5 && Math.abs(v.sc.dy) < 1.5,
+        "sub bubble locked dead-centre at the end of the dive",
+        v.sc ? v.sc.dx.toFixed(2) + ", " + v.sc.dy.toFixed(2) + " px" : "n/a");
+  check(v.subLocked, "sub bubble highlighted during lock-on");
+  check(v.prefetch, "connection starts during the lock-on (opaque fetch fired)");
+  check(v.preconnect, "preconnect hint added at warp start");
+  check(v.magGain > 3 && v.magGain < 25,
+        "sub bubbles are gently magnetic to the cursor",
+        "pulled " + (v.magGain ? v.magGain.toFixed(1) : "n/a") + " px");
+}
+
+async function suiteZoom() {
+  group("zoom");
+  const v = must(ev(`(() => {
+      const wheelAt = (dy, cx, cy) => document.dispatchEvent(new WheelEvent("wheel",
+        { deltaY: dy, clientX: cx, clientY: cy, bubbles: true, cancelable: true }));
+      const wheel = dy => wheelAt(dy, innerWidth / 2, innerHeight / 2);
+      const settle = () => { zoomAnchor = null; __step(30); };
+      let maxZ, minZ;
+      // zoom in / out limits
+      zoom = 1; zoomTarget = 1; zoomAnchor = null; __step(2);
+      for (let i = 0; i < 25; i++) { wheel(-400); __step(4); }
+      settle(); maxZ = zoom;
+      zoom = 1; zoomTarget = 1; zoomAnchor = null; __step(2);
+      for (let i = 0; i < 40; i++) { wheel(400); __step(4); }
+      settle(); minZ = zoom;
+      // cursor-anchored zoom: the world point under the mouse must not move
+      zoom = 1; zoomTarget = 1; zoomAnchor = null; __step(2);
+      const cx = innerWidth * 0.32, cy = innerHeight * 0.38;
+      const w0 = toWorld(cx, cy);
+      for (let i = 0; i < 8; i++) { wheelAt(-350, cx, cy); __step(4); }
+      settle();
+      const w1 = toWorld(cx, cy);
+      // sub-pixel, in world units: allow for the final snap of the zoom ease
+      const anchored = Math.hypot(w1.x - w0.x, w1.y - w0.y) < 0.2;
+      // the shader must have drawn with the live camera (pan + zoom)
+      const camFollows = Space.last.zoom === zoom &&
+                         Space.last.pan.x === pan.x && Space.last.pan.y === pan.y;
+      // uZoom must actually change what the sky renders
+      let skyZoomed = false;
+      const pts = [{ x: innerWidth / 2, y: innerHeight / 2 },
+                   { x: innerWidth / 2 - 260, y: innerHeight / 2 + 120 },
+                   { x: innerWidth / 2 + 300, y: innerHeight / 2 - 100 }];
+      for (const p of pts) {
+        Space.draw(123456, p, 1);   const a = Space.sample();
+        Space.draw(123456, p, 1.8); const b = Space.sample();
+        if (a !== b) skyZoomed = true;
+      }
+      // drag panning moves the graph (and therefore the sky camera)
+      const p0 = pan.x;
+      document.body.dispatchEvent(new PointerEvent("pointerdown",
+        { bubbles: true, button: 0, buttons: 1, clientX: 100, clientY: 100 }));
+      document.dispatchEvent(new PointerEvent("pointermove",
+        { bubbles: true, buttons: 1, clientX: 200, clientY: 160, movementX: 100, movementY: 60 }));
+      document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, button: 0, buttons: 0 }));
+      const dragged = pan.x !== p0;
+      // frame cost while the eases are live
+      zoom = 1; zoomTarget = 1; zoomAnchor = null; __step(2);
+      for (let i = 0; i < 6; i++) { wheel(-400); __step(4); }
+      const t0 = performance.now(); __step(60);
+      const per = (performance.now() - t0) / 60;
+      zoomTarget = 1; zoomAnchor = { wx: 0, wy: 0, sx: innerWidth / 2, sy: innerHeight / 2 };
+      __step(40); zoomAnchor = null;
+      return { maxZ, minZ, anchored, camFollows, skyZoomed, dragged, per }; })()`),
+    "exercise wheel + drag");
+  if (!v) { check(false, "run zoom", v && v.error); return; }
+  check(Math.abs(v.maxZ - 4.0) < 0.01, "zoom caps at 4.0", v.maxZ.toFixed(3));
+  check(Math.abs(v.minZ - 0.25) < 0.01, "zoom floors at 0.25", v.minZ.toFixed(3));
+  check(v.anchored, "zoom stays anchored under the cursor");
+  check(v.camFollows, "shader uses the live pan/zoom camera (not a frozen pan)");
+  check(v.skyZoomed, "sky actually zooms (uZoom changes the render)");
+  check(v.dragged, "sky follows real drag-panning");
+  // full-resolution sky costs more than the old half-res one; still cheap
+  // enough for a start page (the shader is separately throttled to 30fps)
+  check(v.per < 4.5, "frame cost stays cheap while zooming", v.per.toFixed(3) + " ms/frame");
+}
+
+async function suiteBubbles() {
+  group("bubbles");
+  const v = must(ev(`(() => {
+      const a = getComputedStyle(document.querySelector(".node .orb"));
+      const b = getComputedStyle(document.querySelector(".node.sub .orb"));
+      return { bg: a.backgroundColor, glow: a.boxShadow,
+               subBg: b.backgroundColor, subGlow: b.boxShadow }; })()`),
+    "inspect bubble styling");
+  if (v) {
+    check(v.bg === "rgba(0, 0, 0, 0)", "bubble fill removed (transparent)", v.bg);
+    check(v.glow && v.glow !== "none", "bubble keeps its glow");
+    check(v.subBg === "rgba(0, 0, 0, 0)", "sub bubble fill removed", v.subBg);
+    check(v.subGlow && v.subGlow !== "none", "sub bubble keeps its glow");
+  }
+
+  const sz = must(ev(`(() => {
+      const sizes = {};
+      for (const n of ringNodes) {
+        const w = parseFloat(getComputedStyle(n.el).getPropertyValue("--sz"));
+        if (!(n.pop in sizes)) sizes[n.pop] = w;
+      }
+      return { sizes, ordered: sizes[5] > sizes[4] && sizes[4] > sizes[3] && sizes[3] > sizes[2] }; })()`),
+    "read popularity sizes");
+  if (sz) check(sz.ordered, "bubble size scales with popularity",
+    Object.entries(sz.sizes).map(([p, w]) => "pop " + p + "\u2192" + w + "px").join(", "));
+
+  const s = must(ev(`(() => {
+      const p = ringNodes.find(n => n.subs && n.subs.length);
+      if (!p) return null;
+      const sub = p.subs[0];
+      const d = () => Math.round(Math.hypot(sub.pos.x - p.pos.x, sub.pos.y - p.pos.y));
+      const d0 = d();
+      hovered = p; __step(40);
+      const d1 = d();
+      hovered = null; __step(40);
+      const d2 = d();
+      return { id: p.id, d0, d1, d2 }; })()`), "hover a parent, watch sub distance");
+  if (s === null) {
+    check(false, "hover a parent, watch sub distance", "no parent with subs found");
+  } else if (s && !s.error) {
+    check(s.d1 > s.d0 + 2, "sub bubbles spread out on hover", s.id + ": " + s.d0 + "px \u2192 " + s.d1 + "px");
+    check(Math.abs(s.d2 - s.d0) <= Math.abs(s.d1 - s.d0), "sub bubbles relax when unhovered",
+          s.d1 + "px \u2192 " + s.d2 + "px (was " + s.d0 + "px)");
+  }
+}
+
+/* ---------------- driver ---------------- */
+async function runAll() {
+  runBtn.disabled = true; againBtn.disabled = true;
+  runBtn.textContent = "Running\u2026";
+  log.innerHTML = ""; total = 0; passed = 0;
+  tally.textContent = "running\u2026";
+  try {
+    await boot();
+    await suiteStructure();
+    await suiteShader();
+    await suiteLayout();
+    await suiteShooters();
+    await suiteMenu();
+    await suiteBack();
+    await suiteWarp();
+    await suiteZoom();
+    await suiteBubbles();
+    ev("hideOmnibox && hideOmnibox(); closeCtxMenu && closeCtxMenu(); applyLock && applyLock(null); hovered = null;");
+    runBtn.textContent = "Run complete";
+  } catch (e) {
+    row("\u2717", "fail", "harness error", String((e && e.message) || e));
+    runBtn.textContent = "Run failed";
+  }
+  runBtn.disabled = true;
+  againBtn.disabled = false;
+}
+runBtn.addEventListener("click", runAll);
+againBtn.addEventListener("click", runAll);
+runAll();
+</script>
+</body>
+</html>

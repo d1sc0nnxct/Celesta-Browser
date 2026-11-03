@@ -1,0 +1,24 @@
+# ============================================================
+# Custom Firefox client — build configuration
+# Applied to every `mach` invocation via $MOZCONFIG
+# ============================================================
+
+# Build outputs go to D:\browser\gecko\obj-ff (keeps C: drive clear)
+mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-ff
+
+# The desktop browser application (this is a browser, not Firefox-the-platform)
+ac_add_options --enable-application=browser
+
+# Optimized release-style build, no debug info bloat
+ac_add_options --enable-optimize
+ac_add_options --disable-debug
+
+# Don't build test infrastructure — we only need the browser
+ac_add_options --disable-tests
+
+# Cache compiled objects (sccache from mach bootstrap) so rebuilds are mostly cache hits
+ac_add_options --with-ccache=sccache
+
+# Umbra identity: custom branding dir (copy of nightly, renamed to Umbra,
+# clean prefs — no firstrun/whatsnew/update URLs; Firefox icons kept)
+ac_add_options --with-branding=browser/branding/umbra
