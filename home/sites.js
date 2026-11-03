@@ -1,5 +1,5 @@
 /* ============================================================
-   sites.js — popular sites database for the Umbra start page
+   sites.js — popular sites database for the CELESTA start page
    pop: 1–100 popularity score (rough global traffic rank). It sets the
    bubble's size and how close to the middle it sits. cat groups related
    sites: the layout leans each category toward its own direction, and

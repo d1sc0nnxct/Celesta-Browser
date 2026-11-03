@@ -5,12 +5,12 @@
 
 :root {
   --bg: #000000;
-  /* the theme (Settings > Appearance, set by UmbraHomeChild) styles panels and accents */
-  --accent: var(--umbra-accent, #8b93ff);
+  /* the theme (Settings > Appearance, set by CELESTAHomeChild) styles panels and accents */
+  --accent: var(--CELESTA-accent, #8b93ff);
   --text-dim: rgba(255,255,255,0.62);
   --text: rgba(255,255,255,0.92);
-  --glass: var(--umbra-glass, rgba(255,255,255,0.055));
-  --glass-border: var(--umbra-border, rgba(255,255,255,0.14));
+  --glass: var(--CELESTA-glass, rgba(255,255,255,0.055));
+  --glass-border: var(--CELESTA-border, rgba(255,255,255,0.14));
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -578,6 +578,6 @@ kbd {
 
 /* light mode (Settings > Appearance): the start page's panels take the theme's
    text color; the map keeps its own background */
-:root[umbra-light] :is(#hint, #sitecount, #omnibox, #omni, #ctxmenu, #riskdlg .risk-box) {
-  color: var(--umbra-text);
+:root[CELESTA-light] :is(#hint, #sitecount, #omnibox, #omni, #ctxmenu, #riskdlg .risk-box) {
+  color: var(--CELESTA-text);
 }

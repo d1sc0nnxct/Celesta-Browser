@@ -19,6 +19,6 @@ ac_add_options --disable-tests
 # Cache compiled objects (sccache from mach bootstrap) so rebuilds are mostly cache hits
 ac_add_options --with-ccache=sccache
 
-# Umbra identity: custom branding dir (copy of nightly, renamed to Umbra,
+# CELESTA identity: custom branding dir (copy of nightly, renamed to CELESTA,
 # clean prefs — no firstrun/whatsnew/update URLs; Firefox icons kept)
-ac_add_options --with-branding=browser/branding/umbra
+ac_add_options --with-branding=browser/branding/CELESTA
