@@ -4,7 +4,7 @@ A custom Gecko browser with an OLED star-network start page. Sites are bubbles i
 zero-gravity field: size is popularity, position is relatedness, and clicking one dives
 into it.
 
-![Celesta start page](docs/home.png)
+![Celesta start page](docs/home.gif)
 
 ## What is in here
 
@@ -16,7 +16,7 @@ into it.
 | `installer/` | NSIS script + staging script that trims the runtime and produces `Celesta-Setup-0.1.0.exe`. |
 | `sites-radar.backup.js` | Traffic data: Cloudflare Radar rankings plus CrUX origins. |
 | `mozconfig` | Build configuration (`--with-branding=browser/branding/celesta`). |
-| `docs/home.png` | The screenshot above, captured by `home/capture.mjs`. |
+| `docs/home.gif` | The screenshot above, captured by `home/capture.mjs`. |
 
 The 1 GB Firefox clone and its 34 GB build output are deliberately not in this repo.
 
@@ -71,4 +71,4 @@ excluded from the patch; regenerate them from `sites-radar.backup.js`.
   toolchains are not used.
 - The first build is the expensive one (~2h40m here). Later builds are incremental.
 - `home/capture.mjs` needs a running dev server and Brave; it drives a headless instance
-  over the DevTools protocol and writes `docs/home.png`.
+  over the DevTools protocol and writes `docs/home.gif`.

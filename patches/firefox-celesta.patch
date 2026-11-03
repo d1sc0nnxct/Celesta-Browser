@@ -1,3 +1,21 @@
+diff --git a/browser/app/module.ver b/browser/app/module.ver
+index 5ef8d2a02a..1487ce6720 100644
+--- a/browser/app/module.ver
++++ b/browser/app/module.ver
+@@ -1,8 +1,8 @@
+-WIN32_MODULE_COMPANYNAME=Mozilla Corporation
+-WIN32_MODULE_COPYRIGHT=⌐Firefox and Mozilla Developers; available under the MPL 2 license.
++WIN32_MODULE_COMPANYNAME=Celesta
++WIN32_MODULE_COPYRIGHT=∩┐╜Firefox and Mozilla Developers; available under the MPL 2 license.
+ WIN32_MODULE_PRODUCTVERSION=@MOZ_APP_WINVERSION@
+ WIN32_MODULE_PRODUCTVERSION_STRING=@MOZ_APP_VERSION@
+ WIN32_MODULE_TRADEMARKS=Firefox is a Trademark of The Mozilla Foundation.
+-WIN32_MODULE_DESCRIPTION=@MOZ_APP_DISPLAYNAME@
+-WIN32_MODULE_PRODUCTNAME=@MOZ_APP_DISPLAYNAME@
+-WIN32_MODULE_NAME=@MOZ_APP_DISPLAYNAME@
++WIN32_MODULE_DESCRIPTION=Celesta
++WIN32_MODULE_PRODUCTNAME=Celesta
++WIN32_MODULE_NAME=Celesta
 diff --git a/browser/app/profile/firefox.js b/browser/app/profile/firefox.js
 index 91fbfd4a56..4cdccfccf3 100644
 --- a/browser/app/profile/firefox.js
@@ -11,6 +29,17 @@ index 91fbfd4a56..4cdccfccf3 100644
  pref("browser.shell.shortcutFavicons",true);
  pref("browser.shell.mostRecentDateSetAsDefault", "");
  pref("browser.shell.skipDefaultBrowserCheckOnFirstRun", true);
+diff --git a/browser/app/splash.rc b/browser/app/splash.rc
+index ee499e2f0e..69ebd39443 100644
+--- a/browser/app/splash.rc
++++ b/browser/app/splash.rc
+@@ -23,5 +23,5 @@ IDI_CUSTOM_KIT ICON CUSTOM_KIT_ICO
+ 
+ STRINGTABLE DISCARDABLE
+ BEGIN
+-    IDS_STARTMENU_APPNAME,              "@MOZ_APP_DISPLAYNAME@"
++    IDS_STARTMENU_APPNAME,              "Celesta"
+ END
 diff --git a/browser/base/content/appmenu-viewcache.inc.xhtml b/browser/base/content/appmenu-viewcache.inc.xhtml
 index cd226047d9..fda3244e61 100644
 --- a/browser/base/content/appmenu-viewcache.inc.xhtml
@@ -1803,10 +1832,10 @@ index 61a4c0694b..1d17f32c50 100644
             mode="icons"
             class="browser-toolbar"
 diff --git a/browser/base/jar.mn b/browser/base/jar.mn
-index b2b5db6040..afb48470a8 100644
+index b2b5db6040..c2360a27df 100644
 --- a/browser/base/jar.mn
 +++ b/browser/base/jar.mn
-@@ -1,106 +1,143 @@
+@@ -1,106 +1,144 @@
 -# This Source Code Form is subject to the terms of the Mozilla Public
 -# License, v. 2.0. If a copy of the MPL was not distributed with this
 -# file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -1928,6 +1957,7 @@ index b2b5db6040..afb48470a8 100644
 +        content/celesta/bubbles.js                      (../content/celesta/bubbles.js)
 +        content/celesta/graph.js                        (../content/celesta/graph.js)
 +        content/celesta/sites-radar.js                  (../content/celesta/sites-radar.js)
++        content/celesta/urlbar-sites.js                (../content/celesta/urlbar-sites.js)
 +        content/celesta/sites.js                        (../content/celesta/sites.js)
 +        content/celesta/sites-layout.js                 (../content/celesta/sites-layout.js)
 +        content/celesta/chrome.js                       (../content/celesta/chrome.js)
@@ -108719,10 +108749,10 @@ index 0000000000..506e6f965d
 +}
 diff --git a/browser/content/celesta/celestaUrlbarProvider.sys.mjs b/browser/content/celesta/celestaUrlbarProvider.sys.mjs
 new file mode 100644
-index 0000000000..3cfebffdc8
+index 0000000000..8a7b41cd33
 --- /dev/null
 +++ b/browser/content/celesta/celestaUrlbarProvider.sys.mjs
-@@ -0,0 +1,184 @@
+@@ -0,0 +1,186 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -108754,31 +108784,33 @@ index 0000000000..3cfebffdc8
 +function siteIndex() {
 +  if (!index) {
 +    const sandbox = Cu.Sandbox(Services.scriptSecurityManager.getSystemPrincipal(), { wantGlobalProperties: [] });
-+    Services.scriptloader.loadSubScript("chrome://celesta/content/sites-radar.js", sandbox);
++    // the compact 3 MB list (top 50k, already merged and de-duplicated), not the
++    // 63 MB export: this runs in the parent process and used to block startup
 +    Services.scriptloader.loadSubScript("chrome://celesta/content/sites.js", sandbox);
-+    const sites = Cu.evalInSandbox("SITES", sandbox);
++    Services.scriptloader.loadSubScript("chrome://celesta/content/urlbar-sites.js", sandbox);
++    const rows = Cu.evalInSandbox("URLBAR_SITES", sandbox);
 +    const subs = Cu.evalInSandbox("typeof SITE_SUBCATEGORIES == 'undefined' ? {} : SITE_SUBCATEGORIES", sandbox);
 +    tagNames = Cu.evalInSandbox("SITE_CATEGORIES", sandbox)
 +      .map(c => c.id)
 +      .filter(id => id != "other")
 +      .flatMap(id => [id, ...(subs[id] || []).map(([sub]) => id + "/" + sub)]);
-+    index = [...sites]
-+      .sort((a, b) => b.pop - a.pop)
-+      .map(s => [
-+        (s.name + " " + (s.en ? s.en + " " : "") + s.domain).toLowerCase(),
++    index = rows.map(r => {
++      const [domain, name, cat, pop, risk, en, sub] = r;
++      const words = " " + (name + " " + (en ? en + " " : "") + domain).toLowerCase().replace(/[./_-]+/g, " ");
++      return [
++        (name + " " + (en ? en + " " : "") + domain).toLowerCase(),
 +        {
-+          name: s.name,
-+          domain: s.domain,
-+          cats: s.sub ? [s.cat, s.sub, s.cat + "/" + s.sub] : [s.cat],
-+          risk: (s.risk || "").toLowerCase().split("|").filter(Boolean),
-+          words: " " + (s.name + " " + (s.en ? s.en + " " : "") + s.domain).toLowerCase().replace(/[./_-]+/g, " "),
-+          adult: (s.cat || "").split("|").includes("adult") || (s.sub || "").startsWith("adult"),
++          name, domain, pop,
++          cats: sub ? [cat, sub, cat + "/" + sub] : [cat],
++          risk: (risk || "").toLowerCase().split("|").filter(Boolean),
++          words,
++          adult: (cat || "").split("|").includes("adult") || (sub || "").startsWith("adult"),
 +        },
-+      ]);
++      ];
++    });
 +  }
 +  return index;
 +}
-+
 +/* "#tag" words and the rest of the query, lowercased */
 +export function parseQuery(text) {
 +  const words = text.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -111844,7 +111876,7 @@ index 0000000000..cad8621b82
 +};
 diff --git a/browser/content/celesta/graph.js b/browser/content/celesta/graph.js
 new file mode 100644
-index 0000000000..816cf5e849
+index 0000000000..ecc4f1c0a4
 --- /dev/null
 +++ b/browser/content/celesta/graph.js
 @@ -0,0 +1,2540 @@
@@ -114360,12 +114392,12 @@ index 0000000000..816cf5e849
 +  }
 +  applyScene();
 +  const shotPref = (() => { try { return Services.prefs.getBoolPref("celesta.shot", false); } catch { return false; } })();
-+  if (location.search.includes("shot=1") || shotPref) {
++  if (location.search.includes("shot=1") || location.hash.includes("shot=1") || shotPref) {
 +    // docs capture: whole field, no interface, no motion
 +    for (const sel of ["#chrome", "#hint", "#sitecount", "#randombtn", "#soundbtn", "#volume"]) {
 +      const el = document.querySelector(sel); if (el) el.style.display = "none";
 +    }
-+    zoom = zoomTarget = Math.min(0.2, ZMIN * 1.6);
++    try { Bubbles.setLabels([]); } catch {}   // no names or category captions in the shot
 +    pan = { x: innerWidth / 2, y: innerHeight / 2 };
 +    applyScene();
 +  } else {
