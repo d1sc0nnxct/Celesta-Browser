@@ -1779,7 +1779,7 @@ index 61a4c0694b..1d17f32c50 100644
             mode="icons"
             class="browser-toolbar"
 diff --git a/browser/base/jar.mn b/browser/base/jar.mn
-index b2b5db6040..572a8c7f08 100644
+index b2b5db6040..afb48470a8 100644
 --- a/browser/base/jar.mn
 +++ b/browser/base/jar.mn
 @@ -1,106 +1,143 @@
@@ -1895,7 +1895,7 @@ index b2b5db6040..572a8c7f08 100644
 +browser.jar:
 +%  content browser %content/browser/ contentaccessible=yes
 +
-+%  content Celesta %content/celesta/ contentaccessible=yes
++%  content celesta %content/celesta/ contentaccessible=yes
 +%  override chrome://browser/content/aboutPrivateBrowsing.html chrome://celesta/content/index.html
 +        content/celesta/index.html                      (../content/celesta/index.html)
 +        content/celesta/boot.js                         (../content/celesta/boot.js)
@@ -27037,7 +27037,7 @@ HcmV?d00001
 
 diff --git a/browser/branding/celesta/branding.nsi b/browser/branding/celesta/branding.nsi
 new file mode 100644
-index 0000000000..636d2f7824
+index 0000000000..c61a2dd825
 --- /dev/null
 +++ b/browser/branding/celesta/branding.nsi
 @@ -0,0 +1,64 @@
@@ -27051,9 +27051,9 @@ index 0000000000..636d2f7824
 +
 +# BrandFullNameInternal is used for some registry and file system values
 +# instead of BrandFullName and typically should not be modified.
-+!define BrandFullNameInternal "Nightly"
-+!define BrandFullName         "Firefox Nightly"
-+!define CompanyName           "mozilla.org"
++!define BrandFullNameInternal "Celesta"
++!define BrandFullName         "Celesta"
++!define CompanyName           "Celesta"
 +!define URLInfoAbout          "https://www.mozilla.org"
 +!define HelpLink              "https://support.mozilla.org"
 +
@@ -27062,7 +27062,7 @@ index 0000000000..636d2f7824
 +!define URLStubDownloadAArch64 "https://download.mozilla.org/?os=win64-aarch64&lang=${AB_CD}&product=firefox-nightly-latest"
 +!define URLManualDownload "https://www.mozilla.org/${AB_CD}/firefox/installer-help/?channel=nightly&installer_lang=${AB_CD}"
 +!define URLSystemRequirements "https://www.mozilla.org/firefox/system-requirements/"
-+!define Channel "nightly"
++!define Channel "release"
 +
 +# The installer's certificate name and issuer expected by the stub installer
 +!define CertNameDownload   "Mozilla Corporation"
@@ -105267,10 +105267,10 @@ index 0000000000..b68bd8fba4
 +})();
 diff --git a/browser/content/celesta/bubbles.js b/browser/content/celesta/bubbles.js
 new file mode 100644
-index 0000000000..d0fea21061
+index 0000000000..fa28c0e20d
 --- /dev/null
 +++ b/browser/content/celesta/bubbles.js
-@@ -0,0 +1,664 @@
+@@ -0,0 +1,667 @@
 +/* ============================================================
 +   Every site as a GPU circle (outline, faint fill, soft glow): one
 +   instanced draw call, redrawn when the camera moves and a few times a
@@ -105316,7 +105316,10 @@ index 0000000000..d0fea21061
 +  float id = float(gl_InstanceID);
 +  vHot = id == uLocked ? 2.0 : id == uHover ? 1.0 : 0.0;   // hovered and locked bubbles grow and glow
 +  float r = max(aSite.z * uZoom, 0.7) * (vHot > 1.5 ? 1.35 : vHot > 0.5 ? 1.14 : 1.0);
-+  float ext = r * (vHot > 0.5 ? 3.2 : 1.5) + 3.0;   // the quad reaches past the outline for the glow
++  float sr = aSite.z * uZoom;                        // on-screen radius before the minimum clamp
++  // distance LOD: sub-2 px bubbles already take the cheap dot path in the fragment
++  // shader, so their quad only needs to cover the dot, not a glow they never draw
++  float ext = vHot > 0.5 ? r * 3.2 + 3.0 : (sr < 1.5 ? r + 1.4 : r * 1.5 + 3.0);
 +  vec2 s = uPan + spin(aSite.xy + off(id), aCat) * uZoom + aCorner * ext;
 +  gl_Position = vec4(s.x / uRes.x * 2.0 - 1.0, 1.0 - s.y / uRes.y * 2.0, 0.0, 1.0);
 +  vP = aCorner * ext;
@@ -105758,7 +105761,7 @@ index 0000000000..d0fea21061
 +  const FONT_PX = 11.5, LINE_PX = 15;
 +  let raster = 1, atlasCtx = null, slots = new Map(), shelfX = 0, shelfY = 0, shelfH = 0, family = "";
 +  function resetAtlas() {
-+    raster = Math.min(window.devicePixelRatio || 1, 2);
++    raster = Math.min(window.devicePixelRatio || 1, 1.5);
 +    family = getComputedStyle(document.body).fontFamily;
 +    atlasCtx ??= document.createElement("canvas").getContext("2d", { willReadFrequently: true });
 +    atlasCtx.canvas.width = ATLAS; atlasCtx.canvas.height = ATLAS;
@@ -105870,9 +105873,9 @@ index 0000000000..d0fea21061
 +
 +  function resize() {
 +    if (!ok) return;
-+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-+    if (atlasCtx && Math.min(window.devicePixelRatio || 1, 2) !== raster) { resetAtlas(); setLabels(labels); }
-+    send({ size: [Math.round(innerWidth * dpr), Math.round(innerHeight * dpr)], css: [innerWidth, innerHeight], raster: Math.min(window.devicePixelRatio || 1, 2) });
++    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
++    if (atlasCtx && Math.min(window.devicePixelRatio || 1, 1.5) !== raster) { resetAtlas(); setLabels(labels); }
++    send({ size: [Math.round(innerWidth * dpr), Math.round(innerHeight * dpr)], css: [innerWidth, innerHeight], raster: Math.min(window.devicePixelRatio || 1, 1.5) });
 +    if (last) draw(last.pan, last.zoom);
 +  }
 +
@@ -111744,10 +111747,10 @@ index 0000000000..cad8621b82
 +};
 diff --git a/browser/content/celesta/graph.js b/browser/content/celesta/graph.js
 new file mode 100644
-index 0000000000..b76e393f1f
+index 0000000000..c5f892c5fe
 --- /dev/null
 +++ b/browser/content/celesta/graph.js
-@@ -0,0 +1,2385 @@
+@@ -0,0 +1,2504 @@
 +/* ============================================================
 +   Star network graph + right-click floating omnibox
 +   World coordinates: (0,0) = viewport center at scale 1
@@ -111755,6 +111758,10 @@ index 0000000000..b76e393f1f
 +
 +"use strict";
 +
++/* diagnostics: startup errors land in a pref so they survive a headless run */
++function dbg(k, v) { try { Services.prefs.setStringPref("celesta.debug." + k, String(v).slice(0, 200)); } catch {} }
++addEventListener("error", (e) => dbg("error", (e.message || e.type) + " @" + (e.filename || "") + ":" + (e.lineno || 0)));
++addEventListener("unhandledrejection", (e) => dbg("reject", (e.reason && (e.reason.stack || e.reason.message)) || e.reason));
 +performance.mark("Celesta-graph");   // load-time profiling: after the site lists
 +
 +// nothing on the page takes a click until it is ready (boot.js sets the class)
@@ -112557,7 +112564,8 @@ index 0000000000..b76e393f1f
 +async function loadLayout() {
 +  const key = layoutKey();
 +  // the build ships the layout for its own database (tools/build-layout.mjs)
-+  const shipped = typeof SITES_LAYOUT !== "undefined" && SITES_LAYOUT.key === key;
++  const shipped = typeof SITES_LAYOUT !== "undefined" && SITES_LAYOUT.key === key;  dbg("layout", (shipped ? "shipped" : "computed") + ":" + SITES.length + ":" + key + ":" + (typeof SITES_LAYOUT !== "undefined" ? SITES_LAYOUT.key : "none"));
++
 +  const decode = (b64) => new Int32Array((Uint8Array.fromBase64 ? Uint8Array.fromBase64(b64) : Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))).buffer);
 +  let cached = shipped ? { xy: decode(SITES_LAYOUT.xy), links: decode(SITES_LAYOUT.links) } : await kvGet(key);
 +  // stored as typed arrays indexed by SITES position: reading them back is a
@@ -112615,7 +112623,7 @@ index 0000000000..b76e393f1f
 +];
 +function iconImg(domain, lazy = false, big = false) {   // build an <img> that walks the chain
 +  const img = document.createElement("img");
-+  img.alt = ""; img.dataset.si = 0; img.dataset.domain = domain;
++  img.alt = ""; img.decoding = "async"; img.loading = "lazy"; img.dataset.si = 0; img.dataset.domain = domain;
 +  if (big) img.dataset.big = "1";
 +  if (!lazy) img.src = ICON_SRCS(domain, big)[0];
 +  img.onerror = () => iconNext(img);
@@ -112648,7 +112656,7 @@ index 0000000000..b76e393f1f
 +  else { img.remove(); img.closest?.(".orb")?.classList.remove("has-img"); }   // letter last resort
 +}
 +function iconTag(d) {                            // same chain, as an HTML fragment
-+  return `<img data-si="0" data-chain data-domain="${d}" src="${ICON_SRCS(d)[0]}" alt="">`;
++  return `<img data-si="0" data-chain data-domain="${d}" src="${ICON_SRCS(d)[0]}" alt="" loading="lazy" decoding="async">`;
 +}
 +// privileged about: pages strip inline on* attributes from innerHTML, so delegate
 +document.addEventListener("error", (e) => { if (e.target.matches?.("img[data-chain]")) iconNext(e.target); }, true);
@@ -112748,6 +112756,11 @@ index 0000000000..b76e393f1f
 +  if (hovered === n) { hovered = null; refreshLit(); }
 +}
 +function applyLogoTint(img) {
++  // canvas reads and colour math for every icon must not compete with first paint
++  const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 150));
++  idle(() => tintIcon(img), { timeout: 2000 });
++}
++function tintIcon(img) {
 +  const host = img.closest(".node, #suggestions li");
 +  if (!host) return;
 +  const domain = img.dataset.domain;
@@ -112885,6 +112898,103 @@ index 0000000000..b76e393f1f
 +}
 +const EDGES = [];
 +
++/* ---------------- celesta hover note ----------------
++   A struck celesta: sine fundamental plus a few quiet inharmonic partials,
++   fast attack and a long exponential decay. Pitches come from a major
++   pentatonic so any random pair of hovers still sounds consonant. */
++const CELESTA_STEPS = [0, 2, 4, 7, 9];
++let audioCtx = null, audioMaster = null, lastNoteAt = -1;
++const VOLUME_PREF = "celesta.audio.volume";
++const VOLUME_DEFAULT = 24;                      // percent of the 0.05 ceiling
++function hoverVolume() {
++  let pct = VOLUME_DEFAULT;
++  try {
++    if (typeof Services !== "undefined") pct = +Services.prefs.getStringPref(VOLUME_PREF, String(VOLUME_DEFAULT));
++    else { const s = localStorage.getItem(VOLUME_PREF); if (s != null) pct = +s; }
++  } catch {}
++  if (!Number.isFinite(pct)) pct = VOLUME_DEFAULT;
++  return Math.max(0, Math.min(1, pct / 100)) * 0.05;
++}
++function setHoverVolume(pct) {
++  pct = Math.max(0, Math.min(100, Math.round(pct)));
++  try {
++    if (typeof Services !== "undefined") Services.prefs.setStringPref(VOLUME_PREF, String(pct));
++    else localStorage.setItem(VOLUME_PREF, String(pct));
++  } catch {}
++  if (audioMaster) audioMaster.gain.value = (pct / 100) * 0.05;
++}
++function initVolumeUI() {
++  const btn = document.getElementById("soundbtn"), box = document.getElementById("volume"), slider = document.getElementById("volumeSlider");
++  if (!btn || !box || !slider) return;
++  let pct = VOLUME_DEFAULT;
++  try { pct = +((typeof Services !== "undefined") ? Services.prefs.getStringPref(VOLUME_PREF, String(VOLUME_DEFAULT)) : (localStorage.getItem(VOLUME_PREF) ?? VOLUME_DEFAULT)); } catch {}
++  slider.value = Number.isFinite(pct) ? pct : VOLUME_DEFAULT;
++  for (const type of ["pointerdown", "mousedown", "click", "input", "change"]) box.addEventListener(type, (e) => e.stopPropagation());
++  box.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
++  btn.addEventListener("click", (e) => { e.stopPropagation(); box.classList.toggle("hidden"); });
++  slider.addEventListener("input", () => { ensureAudio(); resumeAudio(); setHoverVolume(+slider.value); });
++  addEventListener("pointerdown", (e) => { if (!box.contains(e.target) && !btn.contains(e.target)) box.classList.add("hidden"); }, true);
++}
++function ensureAudio() {
++  if (audioCtx) return audioCtx;
++  const AC = window.AudioContext || window.webkitAudioContext;
++  if (!AC) return null;
++  try {
++    audioCtx = new AC();
++    audioMaster = audioCtx.createGain();
++    audioMaster.gain.value = hoverVolume();  // a hover, not a notification
++    audioMaster.connect(audioCtx.destination);
++  } catch { audioCtx = null; }
++  return audioCtx;
++}
++function resumeAudio() {
++  if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
++}
++addEventListener("pointerdown", resumeAudio, true);
++addEventListener("keydown", resumeAudio, true);
++function mediaIsPlaying() {
++  // this page never plays media, so any playback belongs to another tab or app
++  if (navigator.mediaSession && navigator.mediaSession.playbackState === "playing") return true;
++  for (const el of document.querySelectorAll("audio, video")) {
++    if (!el.paused && !el.ended && el.readyState > 2) return true;
++  }
++  return false;
++}
++function siteNote(seed) {
++  // every domain has its own note: FNV-1a over the name picks a step, the
++  // pentatonic keeps any pair of sites consonant.
++  let h = 2166136261;
++  const s = String(seed || "");
++  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
++  const steps = 4 * CELESTA_STEPS.length;         // four octaves of pentatonic
++  const idx = (h >>> 0) % steps;
++  return 60 + Math.floor(idx / CELESTA_STEPS.length) * 12 + CELESTA_STEPS[idx % CELESTA_STEPS.length];
++}
++function playCelesta(seed) {
++  const ac = audioCtx;
++  if (!ac || ac.state !== "running" || mediaIsPlaying()) return;
++  const t = ac.currentTime;
++  if (t - lastNoteAt < 0.05) return;        // one note per visible transition
++  lastNoteAt = t;
++  const midi = siteNote(seed);
++  const f = 440 * Math.pow(2, (midi - 69) / 12);
++  const out = ac.createGain();
++  out.gain.setValueAtTime(0.0001, t);
++  out.gain.exponentialRampToValueAtTime(0.9, t + 0.004);
++  out.gain.exponentialRampToValueAtTime(0.0001, t + 1.5);
++  out.connect(audioMaster);
++  for (const [mult, amp] of [[1, 1], [2, 0.16], [3, 0.05], [4.16, 0.025]]) {
++    const o = ac.createOscillator();
++    o.type = "sine";
++    o.frequency.value = f * mult;
++    const g = ac.createGain();
++    g.gain.value = amp;
++    o.connect(g).connect(out);
++    o.start(t);
++    o.stop(t + 1.6);
++  }
++}
++initVolumeUI();
 +/* ---------------- interactions: nodes ---------------- */
 +function bindNode(el, n) {
 +  el.addEventListener("click", (e) => {
@@ -112900,6 +113010,7 @@ index 0000000000..b76e393f1f
 +    guardRisk(url, () => window.open(url, "_blank", "noopener"));
 +  });
 +  el.addEventListener("mouseenter", () => {
++    ensureAudio(); resumeAudio(); playCelesta(n.domain);
 +    hovered = n; refreshLit();
 +    el._connect = setTimeout(() => startConnecting("https://" + n.domain + "/"), 150);
 +  });
@@ -113722,7 +113833,7 @@ index 0000000000..b76e393f1f
 +  const vx0 = -pan.x / zoom, vx1 = (innerWidth - pan.x) / zoom;
 +  const vy0 = -pan.y / zoom, vy1 = (innerHeight - pan.y) / zoom;
 +  const checkNear = !warp && (turn || pointerMoved);
-+  const nearR2 = (110 * Math.min(1, Math.max(0.3, zoom / homeZoom))) ** 2;
++  const nearR2 = (170 * Math.min(1, Math.max(0.3, zoom / homeZoom))) ** 2;
 +  // logos show around the pointer, or the screen's centre while the pointer
 +  // is locked for an endless drag (it is hidden and does not move)
 +  const reveal = document.pointerLockElement ? { x: innerWidth / 2, y: innerHeight / 2 } : pointerScreen;
@@ -114115,7 +114226,18 @@ index 0000000000..b76e393f1f
 +    fitCamera();
 +  }
 +  applyScene();
-+  kick();
++  const shotPref = (() => { try { return Services.prefs.getBoolPref("celesta.shot", false); } catch { return false; } })();
++  if (location.search.includes("shot=1") || shotPref) {
++    // docs capture: whole field, no interface, no motion
++    for (const sel of ["#chrome", "#hint", "#sitecount", "#randombtn", "#soundbtn", "#volume"]) {
++      const el = document.querySelector(sel); if (el) el.style.display = "none";
++    }
++    zoom = zoomTarget = Math.min(0.2, ZMIN * 1.6);
++    pan = { x: innerWidth / 2, y: innerHeight / 2 };
++    applyScene();
++  } else {
++    kick();
++  }
 +});
 +addEventListener("pageshow", (e) => {  // bfcache: clear warp residue, drop the highlight, reframe
 +  if (!e.persisted) return;
@@ -114135,10 +114257,10 @@ index 0000000000..b76e393f1f
 +document.addEventListener("pointerleave", () => { pointerScreen = { x: -1e5, y: -1e5 }; pointerMoved = true; kick(); });
 diff --git a/browser/content/celesta/index.html b/browser/content/celesta/index.html
 new file mode 100644
-index 0000000000..0b6b31d824
+index 0000000000..e0d77cb35e
 --- /dev/null
 +++ b/browser/content/celesta/index.html
-@@ -0,0 +1,65 @@
+@@ -0,0 +1,72 @@
 +<!DOCTYPE html>
 +<html lang="en">
 +<head>
@@ -114168,7 +114290,14 @@ index 0000000000..0b6b31d824
 +    </svg>
 +    Random site
 +  </button>
-+  <div id="hint" aria-hidden="true">
++  <button id="soundbtn" type="button" title="Celesta volume" aria-label="Celesta volume">
++    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
++      <path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/>
++    </svg>
++  </button>
++  <div id="volume" class="hidden">
++    <input id="volumeSlider" type="range" min="0" max="100" step="1" value="24" aria-label="Celesta volume">
++  </div>  <div id="hint" aria-hidden="true">
 +    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 +      <rect x="6" y="2" width="12" height="20" rx="6"/><path d="M12 6v4"/>
 +    </svg>
@@ -115066,7 +115195,7 @@ index 0000000000..4aff19f648
 +}
 diff --git a/browser/content/celesta/sites.js b/browser/content/celesta/sites.js
 new file mode 100644
-index 0000000000..6a6a60e6c5
+index 0000000000..3c9ac049d1
 --- /dev/null
 +++ b/browser/content/celesta/sites.js
 @@ -0,0 +1,336 @@
@@ -115081,7 +115210,7 @@ index 0000000000..6a6a60e6c5
 +
 +"use strict";
 +
-+globalThis.performance?.mark("Celesta-sites");   // load-time profiling: after sites-radar.js
++globalThis.performance?.mark("celesta-sites");   // load-time profiling: after sites-radar.js
 +
 +// Ring order: each genre's neighbours are its closest relatives, so the
 +// nebula layout puts similar clouds side by side. "other" is the outer halo.
@@ -115622,7 +115751,7 @@ index 0000000000..4d6fc8fdf4
 +Space.rendererMain();
 diff --git a/browser/content/celesta/space.js b/browser/content/celesta/space.js
 new file mode 100644
-index 0000000000..1706af2c00
+index 0000000000..ef4f256a95
 --- /dev/null
 +++ b/browser/content/celesta/space.js
 @@ -0,0 +1,502 @@
@@ -116034,7 +116163,7 @@ index 0000000000..1706af2c00
 +  }
 +
 +  /* the sky's layers (uF0..uF5): how much each moves with a pan */
-+  const PARALLAX = [0.10, 0.20, 0.36, 0.10, 0.38, 0.62];
++  const PARALLAX = [0.86, 0.90, 0.94, 0.86, 0.92, 0.97];
 +  const SKY_ZOOM = 0.5;   // sky zoom = page zoom ^ SKY_ZOOM
 +  let focus = null, cam = null;
 +  /* Follows the page camera: a pan moves each layer by its parallax share;
@@ -116130,10 +116259,10 @@ index 0000000000..1706af2c00
 +})();
 diff --git a/browser/content/celesta/style.css b/browser/content/celesta/style.css
 new file mode 100644
-index 0000000000..9ec652f64e
+index 0000000000..2b32adc2b0
 --- /dev/null
 +++ b/browser/content/celesta/style.css
-@@ -0,0 +1,498 @@
+@@ -0,0 +1,521 @@
 +/* ============================================================
 +   OLED black floating home ΓÇö Obsidian-style star network
 +   Palette: true black canvas, glass panels, nebula accent
@@ -116226,7 +116355,7 @@ index 0000000000..9ec652f64e
 +  color: hsl(var(--hue, 230), 60%, 82%);
 +  text-shadow: 0 0 .4em #000;
 +  opacity: 0;
-+  transition: opacity .4s ease;
++  transition: opacity .16s ease;
 +}
 +.sublabel.on > span { opacity: .34; }
 +.sublabel.cat > span { font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
@@ -116241,7 +116370,7 @@ index 0000000000..9ec652f64e
 +  width: 100vw; height: 100vh;
 +  z-index: 1;
 +  pointer-events: none;
-+  transition: opacity .35s ease;
++  transition: opacity .16s ease;
 +}
 +body.loading { cursor: progress; }
 +
@@ -116272,7 +116401,7 @@ index 0000000000..9ec652f64e
 +  border-radius: 50%;
 +  display: grid; place-items: center;
 +  background: transparent;                     /* the ring and glow are drawn by bubbles.js */
-+  transition: transform .22s cubic-bezier(.2,.9,.3,1.4);
++  transition: transform .2s cubic-bezier(.2,.9,.3,1.25), box-shadow .18s ease, border-color .18s ease;
 +}
 +.orb > * { grid-area: 1 / 1; }   /* monogram and favicon share the same cell */
 +.orb img {
@@ -116291,7 +116420,7 @@ index 0000000000..9ec652f64e
 +   when the cursor comes near ΓÇö far away the nodes are just stars */
 +.orb img, .orb .mono {
 +  opacity: 0;
-+  transition: opacity .2s ease;
++  transition: opacity .12s ease;
 +}
 +.node.near .orb img, .node.near .orb .mono,
 +.node:hover .orb img, .node:hover .orb .mono,
@@ -116336,7 +116465,7 @@ index 0000000000..9ec652f64e
 +}
 +#randombtn:hover { color: rgba(255,255,255,0.92); border-color: rgba(255,255,255,0.3); }
 +#randombtn:focus-visible { outline: 2px solid rgba(255,255,255,0.6); outline-offset: 2px; }
-+body.warping #randombtn { opacity: 0; transition: opacity .4s ease; }
++body.warping #randombtn { opacity: 0; transition: opacity .16s ease; }
 +
 +/* ---------- bottom hint chip ---------- */
 +#hint {
@@ -116455,7 +116584,7 @@ index 0000000000..9ec652f64e
 +}
 +body.warping .node:not(.locked) { opacity: 0.22; transition: opacity .5s ease; }
 +.node.filtered { opacity: 0.12; pointer-events: none; }   /* left out by a #tag search */
-+body.warping #chrome, body.warping #hint { opacity: 0; transition: opacity .4s ease; }
++body.warping #chrome, body.warping #hint { opacity: 0; transition: opacity .16s ease; }
 +#warp {
 +  position: fixed; inset: 0;
 +  z-index: 60;
@@ -116631,6 +116760,29 @@ index 0000000000..9ec652f64e
 +   text color; the map keeps its own background */
 +:root[Celesta-light] :is(#hint, #sitecount, #randombtn, #omnibox, #omni, #ctxmenu, #riskdlg .risk-box) {
 +  color: var(--Celesta-text);
++}
++
++/* celesta hover volume: a quiet control next to "Random site" */
++#soundbtn {
++  position: fixed; left: 158px; bottom: 26px; z-index: 5;
++  display: flex; align-items: center; justify-content: center;
++  width: 30px; height: 30px; border-radius: 999px;
++  background: var(--glass); border: 1px solid var(--glass-border);
++  color: rgba(255,255,255,0.56); cursor: pointer;
++  transition: color .16s ease, border-color .16s ease;
++}
++#soundbtn:hover { color: #fff; border-color: rgba(255,255,255,0.28); }
++#volume {
++  position: fixed; left: 198px; bottom: 26px; z-index: 6;
++  height: 30px; box-sizing: border-box; display: flex; align-items: center;
++  padding: 0 10px; border-radius: 999px;
++  background: var(--glass); border: 1px solid var(--glass-border);
++}
++#volume.hidden { display: none; }
++#volumeSlider {
++  width: 110px; height: 14px; vertical-align: middle;
++  accent-color: rgba(255,255,255,0.7);
++  background: transparent;
 +}
 diff --git a/browser/content/celesta/window.css b/browser/content/celesta/window.css
 new file mode 100644
