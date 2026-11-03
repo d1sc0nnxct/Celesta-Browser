@@ -8,7 +8,7 @@ using System.Text;
 // URL as the startup argument (it opens about:blank and exits).
 internal static class Program
 {
-    private const string StartPage = "chrome://celesta/content/index.html";
+    private const string StartPage = "about:newtab";
 
     private static readonly string[] UserPrefs =
     {
@@ -28,7 +28,6 @@ internal static class Program
         "user_pref(\"extensions.pocket.enabled\", false);",
         "user_pref(\"browser.tabs.inTitlebar\", 1);",
         "user_pref(\"Celesta.bars.autohide\", false);",
-        "user_pref(\"Celesta.home.shared\", false);",
     };
 
     [STAThread]
