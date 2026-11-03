@@ -1,4 +1,4 @@
-# Launch the Umbra Gecko build as an actual Windows process.
+# Launch the CELESTA Gecko build as an actual Windows process.
 # Usage (PowerShell):  .\launch-gecko.ps1
 # Runs the branded build binary on its packaged start page, then exits when you close it.
 
@@ -9,7 +9,7 @@ if (-not (Test-Path $exe)) {
     exit 1
 }
 
-$profileDir = "$bin\profile-umbra"
+$profileDir = "$bin\profile-CELESTA"
 New-Item -ItemType Directory -Force $profileDir | Out-Null
 
 # -purgecaches: front-end files in dist are updated in place, which does not
@@ -22,6 +22,6 @@ $ffArgs = @(
     "about:home"
 )
 
-Write-Host "Starting Umbra (Gecko) process: $exe"
+Write-Host "Starting CELESTA (Gecko) process: $exe"
 Start-Process -FilePath $exe -ArgumentList $ffArgs -Wait
-Write-Host "Umbra exited (process finished)"
+Write-Host "CELESTA exited (process finished)"

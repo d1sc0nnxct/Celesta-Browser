@@ -1,9 +1,9 @@
-/* Umbra bookmark toolbar — folder support via Places.
+/* CELESTA bookmark toolbar — folder support via Places.
    Call bookmarkFolders() from M3 chrome loader to build toolbar from
    services/Places. Each folder -> collapsible group; count drives width.
 */
 function bookmarkFolders() {
-  const toolbar = document.getElementById("umbra-bookmarks");
+  const toolbar = document.getElementById("CELESTA-bookmarks");
   if (!toolbar) return;
   toolbar.innerHTML = "";
   // Placeholder: M3 port will inject real Places data here.

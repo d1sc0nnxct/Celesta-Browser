@@ -1,7 +1,7 @@
-# Umbra Handoff — Mon Nov 02 2026
+# Celesta Handoff — Mon Nov 02 2026
 
 ## Running
-- Firefox: PID 17296 (`firefox.exe`), `profile-umbra`, `v=32` at `http://127.0.0.1:8742/index.html?v=32`
+- Firefox: PID 17296 (`firefox.exe`), `profile-Celesta`, `v=32` at `http://127.0.0.1:8742/index.html?v=32`
 - Server: `python -m http.server 8742` (localhost) — up
 - Process: 8 workers (parent + content/GPU)
 
@@ -14,19 +14,19 @@
 - `README.md`: M0h entry
 - `launch-gecko.ps1`: Windows process launcher
 - `sites.json`: 12 high-traffic sites
-- M3 redirect (`AboutNewTabRedirector.sys.mjs`): points to `chrome://umbra/content/index.html`
-- `browser/base/jar.mn`: `% content umbra %content/umbra/`
-- `browser/branding/umbra/`: branding dir exists; `mozconfig` includes `--with-branding`
-- `profile-umbra/prefs.js`: sync off, bloat disabled, chrome URL set
+- M3 redirect (`AboutNewTabRedirector.sys.mjs`): points to `chrome://Celesta/content/index.html`
+- `browser/base/jar.mn`: `% content Celesta %content/Celesta/`
+- `browser/branding/Celesta/`: branding dir exists; `mozconfig` includes `--with-branding`
+- `profile-Celesta/prefs.js`: sync off, bloat disabled, chrome URL set
 
 ## Broken / Fixed (last cycle)
 - Blank page: `.tabbrowser-tab { display:none }` in `userChrome.css` → removed; embedded SEED restored; `userChrome.css` minimized
 - `graph.js` old SEED remnants → cleaned by `clean_graph.py`
-- `sites.json` missing from chrome package → copied to `gecko/browser/content/umbra/`
+- `sites.json` missing from chrome package → copied to `gecko/browser/content/Celesta/`
 
 ## Still Needs
-- `./mach build faster` (front-end, skips C++) to compile `jar.mn` → `omni.ja` → makes `chrome://umbra/` self-contained (no localhost server)
-- After build: restart Firefox; it will open `chrome://umbra/content/index.html` directly
+- `./mach build faster` (front-end, skips C++) to compile `jar.mn` → `omni.ja` → makes `chrome://Celesta/` self-contained (no localhost server)
+- After build: restart Firefox; it will open `chrome://Celesta/content/index.html` directly
 
 ## Not Working (current)
 - Window renders but stars may need mouse interaction / rebuild to fully draw (DB loads async; embedded seed is backup)
@@ -34,5 +34,5 @@
 
 ## Next
 1. Run `./mach build faster` in `D:rowser\gecko` (binary exists; just front-end jar)
-2. Restart Firefox with `profile-umbra` — should load packaged home directly
+2. Restart Firefox with `profile-Celesta` — should load packaged home directly
 3. Verify bubbles, shader, stars visually

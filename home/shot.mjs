@@ -1,4 +1,4 @@
-/* Headless visual capture for the Umbra start page (dev helper only).
+/* Headless visual capture for the CELESTA start page (dev helper only).
    Launches an isolated headless Brave, parks shooting stars, and captures
    full + close-up shots at a deterministic 1000x700 viewport. */
 import { spawn, execFileSync } from "node:child_process";
@@ -7,8 +7,8 @@ import path from "node:path";
 
 const BRAVE = "C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe";
 const PORT = 9337;
-const PROFILE = path.join(process.env.LOCALAPPDATA, "Temp", "umbra-shot-profile");
-const OUTDIR = path.join(process.env.LOCALAPPDATA, "Temp", "umbra-shots");
+const PROFILE = path.join(process.env.LOCALAPPDATA, "Temp", "CELESTA-shot-profile");
+const OUTDIR = path.join(process.env.LOCALAPPDATA, "Temp", "CELESTA-shots");
 const PAGE = "http://127.0.0.1:8742/index.html?v=32&shot=headless";
 
 await fs.mkdir(OUTDIR, { recursive: true });

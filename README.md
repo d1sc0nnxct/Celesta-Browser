@@ -4,26 +4,26 @@ A custom browser built by forking Gecko (`mozilla-central`, via the `gecko-dev` 
 
 ## Repository contents
 
-This repo holds the Umbra work only — not the 1 GB Firefox clone or its 34 GB build output.
+This repo holds the Celesta work only — not the 1 GB Firefox clone or its 34 GB build output.
 
 | Path | Purpose |
 |---|---|
 | `home/` | Standalone OLED start-page prototype (run: `python -m http.server 8742`) |
-| `patches/firefox-umbra.patch` | Full diff against `mozilla-firefox/firefox` `main`: branding, newtab redirect, `browser/content/umbra/` chrome, prefs |
+| `patches/firefox-celesta.patch` | Full diff against `mozilla-firefox/firefox` `main`: branding, newtab redirect, `browser/content/Celesta/` chrome, prefs |
 | `sites-radar.backup.js` | Traffic database: Cloudflare Radar worldwide top 100, 56 country top-100 lists, ranking sets to top 100k, CrUX top 200k origins |
-| `mozconfig` | Build configuration (`--with-branding=browser/branding/umbra`) |
-| `launch-gecko.ps1` | Launches the built `firefox.exe` with `profile-umbra` |
+| `mozconfig` | Build configuration (`--with-branding=browser/branding/celesta`) |
+| `launch-gecko.ps1` | Launches the built `firefox.exe` with `profile-celesta` |
 | `HANDOFF.md` | Current state, what is broken, next steps |
 
 Apply the patch to a fresh clone:
 
 ```powershell
-git clone https://github.com/mozilla-firefox/firefox.git umbra-src
-cd umbra-src
-git apply --3way ..\browser\patches\umbra.patch
+git clone https://github.com/mozilla-firefox/firefox.git Celesta-src
+cd Celesta-src
+git apply --3way ..\browser\patches\Celesta.patch
 ```
 
-Two large generated files (`browser/content/umbra/sites-radar.js`, `sites-radar.js`/`sites-layout.js`) are excluded from the patch and regenerated from the dataset.
+Two large generated files (`browser/content/Celesta/sites-radar.js`, `sites-radar.js`/`sites-layout.js`) are excluded from the patch and regenerated from the dataset.
 
 ## Layout
 

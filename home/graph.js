@@ -17,15 +17,15 @@ const hueJitter = (id) => {
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
   return (h % 25) - 12;
 };
-/* settings from Settings > Home, set on the root element by UmbraHomeChild
+/* settings from Settings > Home, set on the root element by CELESTAHomeChild
    before this script runs (missing when the page is opened as a plain file) */
 const SETTINGS = document.documentElement.dataset;
 const setting = (key, fallback) => (SETTINGS[key] ?? String(fallback));
-if (setting("umbraLogos", "hover") === "always") document.documentElement.classList.add("logos-always");
+if (setting("CELESTALogos", "hover") === "always") document.documentElement.classList.add("logos-always");
 // hiding uncategorized sites keeps everyone else's positions: the layout
 // is still computed (and cached) for the whole database
 // si: the site's index in SITES, which is how the cached layout stores it
-const showOther = setting("umbraUncategorized", true) === "true";
+const showOther = setting("CELESTAUncategorized", true) === "true";
 const SEED = {
   nodes: SITES.flatMap((s, si) => showOther || s.cat !== "other"
     ? [{ ...s, si, hue: s.hue ?? (CAT_HUE[s.cat] ?? 255) + hueJitter(s.id), pos: { x: 0, y: 0 } }] : []),
@@ -33,7 +33,7 @@ const SEED = {
 };
 
 /* visited sites + lock-on target persist across reloads / back navigation */
-const VISITED_KEY = "umbra.visited", LOCK_KEY = "umbra.lock.target";
+const VISITED_KEY = "CELESTA.visited", LOCK_KEY = "CELESTA.lock.target";
 function safeSSGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
 function safeSSSet(k,v){ try { sessionStorage.setItem(k, v); } catch (e) {} }
 // sites opened from a shooting star; privileged pages have no localStorage
@@ -305,7 +305,7 @@ async function loadLayout() {
    localStorage, so this is IndexedDB. */
 const kvDB = new Promise((res) => {
   try {
-    const rq = indexedDB.open("umbra", 1);
+    const rq = indexedDB.open("CELESTA", 1);
     rq.onupgradeneeded = () => rq.result.createObjectStore("kv");
     rq.onsuccess = () => res(rq.result);
     rq.onerror = () => res(null);
@@ -485,7 +485,7 @@ function buildDOM() {
   const bySite = [];
   for (const n of graphNodes) bySite[n.si] = n;
   const pairs = [];
-  if (setting("umbraLinks", true) === "true") {
+  if (setting("CELESTALinks", true) === "true") {
     for (let k = 0; k < SEED.links.length; k += 2) {
       const a = bySite[SEED.links[k]], b = bySite[SEED.links[k + 1]];
       if (a && b) pairs.push([a, b]);
@@ -845,7 +845,7 @@ function warpTo(url, opts) {
   const far = off > 0.5 ? { from: toWorld(innerWidth / 2, innerHeight / 2), dip: Math.min(6, off * 1.5) } : null;
   warp = { target, url, t0: performance.now(), dur: far ? 950 + Math.min(700, off * 150) : 950, anchor, far,
            from: { x: pan.x, y: pan.y, z: zoom }, noNavigate: !!opts?.noNavigate };
-  try { history.replaceState({ ...history.state, umbraDive: { x: target.pos.x, y: target.pos.y } }, ""); } catch {}
+  try { history.replaceState({ ...history.state, CELESTADive: { x: target.pos.x, y: target.pos.y } }, ""); } catch {}
   kick();
 }
 function openURL(url, opts) { guardRisk(url, () => warpTo(url, opts)); }
@@ -855,14 +855,14 @@ function openURL(url, opts) { guardRisk(url, () => warpTo(url, opts)); }
 function saveCamera() {
   try {
     const cam = { cx: (innerWidth / 2 - pan.x) / zoom, cy: (innerHeight / 2 - pan.y) / zoom, z: zoom };
-    history.replaceState({ ...history.state, umbraCam: cam }, "");
+    history.replaceState({ ...history.state, CELESTACam: cam }, "");
   } catch {}
 }
 function clearDive() {
-  try { const { umbraDive, ...rest } = history.state || {}; history.replaceState(rest, ""); } catch {}
+  try { const { CELESTADive, ...rest } = history.state || {}; history.replaceState(rest, ""); } catch {}
 }
 function savedCamera() {
-  const c = history.state?.umbraCam;
+  const c = history.state?.CELESTACam;
   return c && Number.isFinite(c.z) ? { x: innerWidth / 2 - c.cx * c.z, y: innerHeight / 2 - c.cy * c.z, z: c.z } : null;
 }
 addEventListener("pagehide", () => { if (!warp && !document.body.classList.contains("warping")) saveCamera(); });
@@ -890,7 +890,7 @@ function riskOf(url) {
   return null;
 }
 function guardRisk(url, go) {
-  const risk = setting("umbraWarn", true) === "true" && riskOf(url);
+  const risk = setting("CELESTAWarn", true) === "true" && riskOf(url);
   if (!risk || riskAllowed.has(risk.domain)) { go(); return; }
   document.getElementById("riskdlg")?.remove();
   const dlg = document.createElement("div");
@@ -990,7 +990,7 @@ function stepWarp(t) {
   if (p >= 1) {
     const { url, noNavigate } = warp;
     warp = null;
-    dispatchEvent(new Event("umbra-warped"));
+    dispatchEvent(new Event("CELESTA-warped"));
     // the address bar loads the page itself once the dive is over; the page
     // stays black until then and the browser fades the new site in
     if (!noNavigate) location.href = url;
@@ -998,9 +998,9 @@ function stepWarp(t) {
 }
 
 /* The address bar asks for the same dive before it loads a page from this
-   tab (UmbraHomeChild relays it): onto the site's bubble if it has one in
+   tab (CELESTAHomeChild relays it): onto the site's bubble if it has one in
    map, wherever it is, else into the middle of the screen. */
-addEventListener("umbra-warp", (e) => {
+addEventListener("CELESTA-warp", (e) => {
   const url = e.detail?.url || "";
   let host = "";
   try { host = new URL(url).hostname.replace(/^www\./, ""); } catch {}
@@ -1093,14 +1093,14 @@ document.addEventListener("keydown", (e) => {
    Runs only while something changes (camera, warp, pointer, hover): an idle
    page schedules no frames at all. kick() starts it again. */
 let framePending = false, lastCamMoveAt = 0;
-const MAX_FPS = Number(setting("umbraMaxFps", 120));
+const MAX_FPS = Number(setting("CELESTAMaxFps", 120));
 function kick() {
   if (!framePending) { framePending = true; requestAnimationFrame(frame); }
 }
 function frame(t) {
   framePending = false;
   // at most MAX_FPS updates a second: on a 240 Hz screen every update is a
-  // full redraw, and 120 already moves smoothly (setting: data-umbra-max-fps)
+  // full redraw, and 120 already moves smoothly (setting: data-CELESTA-max-fps)
   if (MAX_FPS && lastT && t - lastT < 1000 / MAX_FPS - 1) { kick(); return; }
   const dt = Math.min(80, Math.max(1, t - (lastT || t)));
   lastT = t;
@@ -1393,7 +1393,7 @@ function reaimStars() {
 }
 
 function shooterLoop() {
-  if (setting("umbraStars", true) !== "true") return;
+  if (setting("CELESTAStars", true) !== "true") return;
   spawnShootingStar();
   setTimeout(shooterLoop, 250 + Math.random() * 900);
 }
@@ -1412,18 +1412,18 @@ setInterval(() => { if (performance.now() - lastInput > IDLE_MS) document.body.c
 /* ---------------- init ---------------- */
 // The sky starts once the bubbles are on screen: compiling its shader keeps
 // the GPU busy for seconds, and the page's first paint would wait behind it.
-// A custom shader (Settings > Home) arrives from UmbraHomeChild a moment
+// A custom shader (Settings > Home) arrives from CELESTAHomeChild a moment
 // after this script runs; the built-in sky starts if it never comes.
-const bubblesShown = new Promise((res) => { addEventListener("umbra-ready", res, { once: true }); setTimeout(res, 6000); });
+const bubblesShown = new Promise((res) => { addEventListener("CELESTA-ready", res, { once: true }); setTimeout(res, 6000); });
 bubblesShown.then(() => {
-if (setting("umbraBg", "nebula") === "shader") {
+if (setting("CELESTABg", "nebula") === "shader") {
   let started = false;
   const start = () => {
     if (started) return;
     started = true;
-    Space.init(null, null, SETTINGS.umbraShader || null);
+    Space.init(null, null, SETTINGS.CELESTAShader || null);
   };
-  addEventListener("umbra-background", start, { once: true });
+  addEventListener("CELESTA-background", start, { once: true });
   setTimeout(start, 2000);
 } else {
   Space.init();
@@ -1431,23 +1431,23 @@ if (setting("umbraBg", "nebula") === "shader") {
 });
 
 /* Background (Settings > Home): the sky shader with or without nebulae, a
-   plain color, or a picture, GIF or video. UmbraHomeChild delivers a file as
-   a blob: URL, possibly after this script has run (the umbra-background
+   plain color, or a picture, GIF or video. CELESTAHomeChild delivers a file as
+   a blob: URL, possibly after this script has run (the CELESTA-background
    event). */
 let skyOn = true;
 function applyBackground() {
-  const kind = setting("umbraBg", "nebula");
+  const kind = setting("CELESTABg", "nebula");
   skyOn = kind === "nebula" || kind === "stars" || kind === "shader";
   $("#space").style.display = skyOn ? "" : "none";
-  document.body.style.background = kind === "color" ? setting("umbraBgColor", "#000") : "#000";
+  document.body.style.background = kind === "color" ? setting("CELESTABgColor", "#000") : "#000";
   if (skyOn) {
     if (kind !== "shader") Space.setNebula(kind === "nebula" ? 1 : 0);
     return;
   }
-  const url = SETTINGS.umbraBgUrl;
+  const url = SETTINGS.CELESTABgUrl;
   if (!url || $("#bgmedia")?.src === url) return;
   $("#bgmedia")?.remove();
-  const video = (SETTINGS.umbraBgType || "").startsWith("video/");
+  const video = (SETTINGS.CELESTABgType || "").startsWith("video/");
   const media = document.createElement(video ? "video" : "img");
   media.id = "bgmedia";
   if (video) Object.assign(media, { muted: true, loop: true, autoplay: true, playsInline: true });
@@ -1455,7 +1455,7 @@ function applyBackground() {
   document.body.prepend(media);
 }
 applyBackground();
-addEventListener("umbra-background", applyBackground);
+addEventListener("CELESTA-background", applyBackground);
 
 // the sky gets the live camera (parallax pan, cursor-anchored zoom) at ~30 fps
 // while the view moves, and drifts at ~15 fps when it is still
@@ -1504,11 +1504,11 @@ document.addEventListener("visibilitychange", () => {
   applyScene();
 });
 
-performance.mark("umbra-script");
+performance.mark("CELESTA-script");
 loadLayout().then(() => {
-  performance.mark("umbra-layout");
+  performance.mark("CELESTA-layout");
   fitCamera();
-  const cam = savedCamera(), dive = history.state?.umbraDive;
+  const cam = savedCamera(), dive = history.state?.CELESTADive;
   if (cam) { pan = { x: cam.x, y: cam.y }; zoom = zoomTarget = cam.z; }
   if (cam && dive) {
     // Back from a site: start inside the bubble it was opened from and pull out
@@ -1523,7 +1523,7 @@ loadLayout().then(() => {
   buildIndex();
   // creating the first WebGL context on this thread can take up to a second:
   // only after the page has painted once
-  requestAnimationFrame(() => setTimeout(() => { Bubbles.init(); Bubbles.draw(pan, zoom); performance.mark("umbra-ready"); dispatchEvent(new Event("umbra-ready")); }, 0));
+  requestAnimationFrame(() => setTimeout(() => { Bubbles.init(); Bubbles.draw(pan, zoom); performance.mark("CELESTA-ready"); dispatchEvent(new Event("CELESTA-ready")); }, 0));
   kick();
 });
 addEventListener("pageshow", (e) => {  // bfcache: clear warp residue, drop the highlight, reframe
