@@ -3,9 +3,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 
-// Celesta launcher: starts the built browser with the packaged start page.
+// Celesta launcher: opens the built browser on the packaged start page.
 // The page is set as the homepage because Firefox will not accept a chrome://
-// URL as the startup argument (it opens as about:blank and exits).
+// URL as the startup argument (it opens about:blank and exits).
 internal static class Program
 {
     private const string StartPage = "chrome://celesta/content/index.html";
@@ -26,8 +26,8 @@ internal static class Program
         "user_pref(\"browser.newtabpage.activity-stream.feeds.section.topstories\", false);",
         "user_pref(\"browser.newtabpage.activity-stream.showSponsored\", false);",
         "user_pref(\"extensions.pocket.enabled\", false);",
-        "user_pref(\"browser.tabs.inTitlebar\", 0);",
-        "user_pref(\"toolkit.legacyUserProfileCustomizations.stylesheets\", true);",
+        "user_pref(\"browser.tabs.inTitlebar\", 1);",
+        "user_pref(\"Celesta.bars.autohide\", false);",
     };
 
     [STAThread]
@@ -49,7 +49,7 @@ internal static class Program
         Directory.CreateDirectory(profile);
 
         WriteUserJs(profile);
-        WriteUserChrome(profile);
+        RemoveUserChrome(profile);
 
         var psi = new ProcessStartInfo(firefox)
         {
@@ -73,16 +73,14 @@ internal static class Program
         catch (Exception ex) { Log("user.js: " + ex.Message); }
     }
 
-    private static void WriteUserChrome(string profile)
+    // earlier builds hid the whole browser chrome here; make sure a profile
+    // created by one of those gets its toolbars back
+    private static void RemoveUserChrome(string profile)
     {
         try
         {
-            string chrome = Path.Combine(profile, "chrome");
-            Directory.CreateDirectory(chrome);
-            File.WriteAllText(Path.Combine(chrome, "userChrome.css"),
-                "@namespace url(\"http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul\");\n" +
-                "#TabsToolbar, #titlebar, #navigator-toolbox, #PersonalToolbar, #urlbar-container, #searchbar { display: none !important; }\n" +
-                "#main-window { background: #000 !important; }\n");
+            string css = Path.Combine(profile, "chrome", "userChrome.css");
+            if (File.Exists(css)) File.Delete(css);
         }
         catch (Exception ex) { Log("userChrome.css: " + ex.Message); }
     }
