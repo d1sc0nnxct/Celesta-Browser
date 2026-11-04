@@ -1832,10 +1832,10 @@ index 61a4c0694b..1d17f32c50 100644
             mode="icons"
             class="browser-toolbar"
 diff --git a/browser/base/jar.mn b/browser/base/jar.mn
-index b2b5db6040..c2360a27df 100644
+index b2b5db6040..c60f8c9b72 100644
 --- a/browser/base/jar.mn
 +++ b/browser/base/jar.mn
-@@ -1,106 +1,144 @@
+@@ -1,106 +1,145 @@
 -# This Source Code Form is subject to the terms of the Mozilla Public
 -# License, v. 2.0. If a copy of the MPL was not distributed with this
 -# file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -1958,6 +1958,7 @@ index b2b5db6040..c2360a27df 100644
 +        content/celesta/graph.js                        (../content/celesta/graph.js)
 +        content/celesta/sites-radar.js                  (../content/celesta/sites-radar.js)
 +        content/celesta/urlbar-sites.js                (../content/celesta/urlbar-sites.js)
++        content/celesta/first-paint.jpg                (../content/celesta/first-paint.jpg)
 +        content/celesta/sites.js                        (../content/celesta/sites.js)
 +        content/celesta/sites-layout.js                 (../content/celesta/sites-layout.js)
 +        content/celesta/chrome.js                       (../content/celesta/chrome.js)
@@ -105255,10 +105256,10 @@ index e1dd88342e..d35c3fdf4e 100644
      }
 diff --git a/browser/content/celesta/boot.js b/browser/content/celesta/boot.js
 new file mode 100644
-index 0000000000..b68bd8fba4
+index 0000000000..2d502502cb
 --- /dev/null
 +++ b/browser/content/celesta/boot.js
-@@ -0,0 +1,78 @@
+@@ -0,0 +1,81 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -105286,6 +105287,13 @@ index 0000000000..b68bd8fba4
 +    document.head.appendChild(link);
 +  }
 +  document.body.classList.add("loading");
++  // first paint: the bundled picture of the field, replaced by the last stored
++  // one (if any); graph.js fades it out when the live map is ready
++  const bootShot = document.createElement("img");
++  bootShot.id = "bootshot";
++  bootShot.alt = "";
++  bootShot.src = "chrome://celesta/content/first-paint.jpg";
++  document.body.appendChild(bootShot);
 +  let started = false;
 +  const start = () => {
 +    if (started) {
@@ -105320,12 +105328,8 @@ index 0000000000..b68bd8fba4
 +        get.onerror = start;
 +        get.onsuccess = () => {
 +          if (get.result instanceof Blob) {
-+            const img = document.createElement("img");
-+            img.id = "bootshot";
-+            img.alt = "";
-+            img.onload = () => performance.mark("Celesta-shot");   // load-time profiling
-+            img.src = URL.createObjectURL(get.result);
-+            document.body.appendChild(img);
++            bootShot.onload = () => performance.mark("Celesta-shot");   // load-time profiling
++            bootShot.src = URL.createObjectURL(get.result);
 +          }
 +          start();
 +        };
@@ -108942,10 +108946,10 @@ index 0000000000..8a7b41cd33
 +}
 diff --git a/browser/content/celesta/chrome.css b/browser/content/celesta/chrome.css
 new file mode 100644
-index 0000000000..aa054c4fe3
+index 0000000000..11bd123d05
 --- /dev/null
 +++ b/browser/content/celesta/chrome.css
-@@ -0,0 +1,1004 @@
+@@ -0,0 +1,981 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -109927,29 +109931,6 @@ index 0000000000..aa054c4fe3
 +  color: var(--Celesta-text) !important;
 +  border-top-color: transparent !important;
 +}
-+
-+/* window controls: pills at any corner-roundness setting */
-+#window-controls toolbarbutton,
-+.titlebar-buttonbox-container toolbarbutton {
-+  border-radius: 999px !important;
-+}
-+
-+/* vertical tabs: keep the rail clear of the rounded corners */
-+#vertical-tabs,
-+#Celesta-vertical-tabs {
-+  overflow: hidden;
-+  padding: calc(var(--Celesta-radius, 24px) * 0.45) calc(var(--Celesta-radius, 24px) * 0.3) !important;
-+  box-sizing: border-box;
-+}
-+
-+/* bars grow with the window density setting as well as their own scale */
-+:root[uidensity="compact"] { --Celesta-density: 0.88; }
-+:root[uidensity="touch"] { --Celesta-density: 1.14; }
-+:root { --Celesta-density: var(--Celesta-density, 1); }
-+#navigator-toolbox { zoom: calc(var(--Celesta-bars-scale, 1) * var(--Celesta-density, 1)); }
-+
-+/* the two pills share the width evenly instead of the last one stretching */
-+#Celesta-tabbar, #Celesta-bookmarks { flex: 1 1 0; min-width: 0; }
 diff --git a/browser/content/celesta/chrome.js b/browser/content/celesta/chrome.js
 new file mode 100644
 index 0000000000..a2b454d0cd
@@ -115921,7 +115902,7 @@ index 0000000000..4d6fc8fdf4
 +Space.rendererMain();
 diff --git a/browser/content/celesta/space.js b/browser/content/celesta/space.js
 new file mode 100644
-index 0000000000..402d29ea3e
+index 0000000000..735468a0b8
 --- /dev/null
 +++ b/browser/content/celesta/space.js
 @@ -0,0 +1,502 @@
@@ -116066,7 +116047,7 @@ index 0000000000..402d29ea3e
 +         with the page */
 +      float rs = (0.55 + 1.1 * b) * k, rr = max(rs, 0.7);
 +      float u = min(1.0, d / rr);
-+      float core = exp(-2.4 * u * u) * min(1.0, rs * rs / 0.49);   /* gaussian core, not a flat disc */
++      float core = clamp(rr + 0.5 - d, 0.0, 1.0) * min(1.0, rs * rs / 0.49) * (1.0 - 0.6 * u * u);   /* brighter middle */
 +      float g = d / (2.6 * rr);
 +      vec3 c = tint * s * (1.4 * core + 0.30 * exp(-g * g) + 0.08 * exp(-dh * dh * 0.014));
 +      if (spikes > 0.0 && b > 0.45) {
@@ -116429,10 +116410,10 @@ index 0000000000..402d29ea3e
 +})();
 diff --git a/browser/content/celesta/style.css b/browser/content/celesta/style.css
 new file mode 100644
-index 0000000000..055b66dbe9
+index 0000000000..88adc876c1
 --- /dev/null
 +++ b/browser/content/celesta/style.css
-@@ -0,0 +1,525 @@
+@@ -0,0 +1,530 @@
 +/* ============================================================
 +   OLED black floating home ΓÇö Obsidian-style star network
 +   Palette: true black canvas, glass panels, nebula accent
@@ -116958,6 +116939,11 @@ index 0000000000..055b66dbe9
 +/* bubbles fade in and out instead of popping with their DOM nodes */
 +.node { transition: opacity .12s ease; }
 +.node.leaving { opacity: 0; }
++
++/* while the catalogue parses, show the field instead of an empty page */
++body.loading {
++  background: #000 url("chrome://celesta/content/first-paint.jpg") center / cover no-repeat;
++}
 diff --git a/browser/content/celesta/window.css b/browser/content/celesta/window.css
 new file mode 100644
 index 0000000000..cb37496658

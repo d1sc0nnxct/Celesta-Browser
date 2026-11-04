@@ -27,14 +27,6 @@ internal static class Program
         "user_pref(\"browser.newtabpage.activity-stream.showSponsored\", false);",
         "user_pref(\"extensions.pocket.enabled\", false);",
         "user_pref(\"browser.tabs.inTitlebar\", 1);",
-        // fewer renderer processes: one content process instead of a pool
-        "user_pref(\"fission.autostart\", false);",
-        "user_pref(\"dom.ipc.processCount\", 1);",
-        "user_pref(\"dom.ipc.processCount.file\", 1);",
-        "user_pref(\"dom.ipc.processPrelaunch.enabled\", false);",
-        "user_pref(\"media.rdd-process.enabled\", false);",
-        "user_pref(\"browser.tabs.remote.separatePrivilegedContentProcess\", false);",
-        "user_pref(\"extensions.webextensions.remote\", false);",
     };
 
     [STAThread]
