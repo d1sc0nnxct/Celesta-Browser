@@ -1832,10 +1832,10 @@ index 61a4c0694b..1d17f32c50 100644
             mode="icons"
             class="browser-toolbar"
 diff --git a/browser/base/jar.mn b/browser/base/jar.mn
-index b2b5db6040..c60f8c9b72 100644
+index b2b5db6040..7cc8482be4 100644
 --- a/browser/base/jar.mn
 +++ b/browser/base/jar.mn
-@@ -1,106 +1,145 @@
+@@ -1,106 +1,146 @@
 -# This Source Code Form is subject to the terms of the Mozilla Public
 -# License, v. 2.0. If a copy of the MPL was not distributed with this
 -# file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -1959,6 +1959,7 @@ index b2b5db6040..c60f8c9b72 100644
 +        content/celesta/sites-radar.js                  (../content/celesta/sites-radar.js)
 +        content/celesta/urlbar-sites.js                (../content/celesta/urlbar-sites.js)
 +        content/celesta/first-paint.jpg                (../content/celesta/first-paint.jpg)
++        content/celesta/sites-prebuilt.json           (../content/celesta/sites-prebuilt.json)
 +        content/celesta/sites.js                        (../content/celesta/sites.js)
 +        content/celesta/sites-layout.js                 (../content/celesta/sites-layout.js)
 +        content/celesta/chrome.js                       (../content/celesta/chrome.js)
@@ -105256,10 +105257,10 @@ index e1dd88342e..d35c3fdf4e 100644
      }
 diff --git a/browser/content/celesta/boot.js b/browser/content/celesta/boot.js
 new file mode 100644
-index 0000000000..2d502502cb
+index 0000000000..e10f23cd1a
 --- /dev/null
 +++ b/browser/content/celesta/boot.js
-@@ -0,0 +1,81 @@
+@@ -0,0 +1,91 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -105273,13 +105274,14 @@ index 0000000000..2d502502cb
 +"use strict";
 +
 +(function boot() {
-+  const SCRIPTS = ["shadertoy.js", "space.js", "bubbles.js", "sites-radar.js", "sites.js", "sites-layout.js", "graph.js"];
++  const FIRST = ["shadertoy.js", "space.js", "bubbles.js"];
++  const REST = ["sites.js", "sites-layout.js", "graph.js"];
 +  // a tab's stand-in under the window's shared start page stays empty (CelestaHomeChild pageMode)
 +  if (document.documentElement.dataset.CelestaMode === "standin") {
 +    return;
 +  }
 +  // added after the first paint: fetched and compiled meanwhile
-+  for (const name of SCRIPTS) {
++  for (const name of [...FIRST, ...REST]) {
 +    const link = document.createElement("link");
 +    link.rel = "preload";
 +    link.as = "script";
@@ -105303,12 +105305,21 @@ index 0000000000..2d502502cb
 +    // after a paint, so the picture is on screen before the long scripts run
 +    requestAnimationFrame(() =>
 +      setTimeout(() => {
-+        for (const name of SCRIPTS) {
-+          const s = document.createElement("script");
-+          s.src = "chrome://celesta/content/" + name;
-+          s.async = false;
-+          document.body.appendChild(s);
-+        }
++        const load = (list) => {
++          for (const name of list) {
++            const s = document.createElement("script");
++            s.src = "chrome://celesta/content/" + name;
++            s.async = false;
++            document.body.appendChild(s);
++          }
++        };
++        load(FIRST);
++        // the merged catalogue as plain JSON: parsing it skips compiling a 63 MB
++        // JS literal and re-running the radar merge on every load
++        fetch("chrome://celesta/content/sites-prebuilt.json")
++          .then((r) => (r.ok ? r.text() : Promise.reject(new Error("no prebuilt"))))
++          .then((text) => { globalThis.CelestaPrebuilt = JSON.parse(text); load(REST); })
++          .catch(() => load(["sites-radar.js", ...REST]));
 +      }, 0)
 +    );
 +  };
@@ -105324,7 +105335,7 @@ index 0000000000..2d502502cb
 +    open.onerror = start;
 +    open.onsuccess = () => {
 +      try {
-+        const get = open.result.transaction("kv").objectStore("kv").get(`shot:${innerWidth}x${innerHeight}@${devicePixelRatio}`);
++        const get = open.result.transaction("kv").objectStore("kv").get(`shot:v2:${innerWidth}x${innerHeight}@${devicePixelRatio}`);
 +        get.onerror = start;
 +        get.onsuccess = () => {
 +          if (get.result instanceof Blob) {
@@ -111858,10 +111869,10 @@ index 0000000000..cad8621b82
 +};
 diff --git a/browser/content/celesta/graph.js b/browser/content/celesta/graph.js
 new file mode 100644
-index 0000000000..8b95ae22fe
+index 0000000000..56ab6a634d
 --- /dev/null
 +++ b/browser/content/celesta/graph.js
-@@ -0,0 +1,2544 @@
+@@ -0,0 +1,2545 @@
 +/* ============================================================
 +   Star network graph + right-click floating omnibox
 +   World coordinates: (0,0) = viewport center at scale 1
@@ -114056,6 +114067,7 @@ index 0000000000..8b95ae22fe
 +
 +function buildChrome() {
 +  const bar = $("#tabbar"), bms = $("#bookmarks");
++  if (!bar || !bms) return;                      // the browser draws the real bars
 +  bar.innerHTML = ""; bms.innerHTML = "";
 +
 +  for (const t of CHROME.tabs) {
@@ -114265,7 +114277,7 @@ index 0000000000..8b95ae22fe
 +  lastW = innerWidth; lastH = innerHeight;
 +}
 +
-+if (location.protocol === "about:") $("#chrome").style.display = "none";   // the browser draws the real tab/bookmark bubbles
++if (location.protocol === "about:") { const c = $("#chrome"); if (c) c.style.display = "none"; }   // the browser draws the real tab/bookmark bubbles
 +$("#sitecount").textContent = graphNodes.length.toLocaleString() + " sites";
 +$("#randombtn").addEventListener("click", () => {
 +  for (let tries = 0; tries < 200; tries++) {
@@ -114282,7 +114294,7 @@ index 0000000000..8b95ae22fe
 +  if (touched || warp || savedCamera() || document.hidden || Bubbles.animating(performance.now())) return;
 +  // the sky's start-up (its shader) keeps the GPU process busy for seconds: after it
 +  if (!Space.ok && tries < 10) { setTimeout(() => saveShot(tries + 1), 1000); return; }
-+  const key = `shot:${innerWidth}x${innerHeight}@${devicePixelRatio}`;
++  const key = `shot:v2:${innerWidth}x${innerHeight}@${devicePixelRatio}`;
 +  Bubbles.shot(pan, zoom, spinTable).then((img) => {
 +    if (!img || touched) return;
 +    // GL rows come bottom first with premultiplied colour; ImageData wants neither
@@ -114408,10 +114420,10 @@ index 0000000000..8b95ae22fe
 +document.addEventListener("pointerleave", () => { pointerScreen = { x: -1e5, y: -1e5 }; pointerMoved = true; kick(); });
 diff --git a/browser/content/celesta/index.html b/browser/content/celesta/index.html
 new file mode 100644
-index 0000000000..e0d77cb35e
+index 0000000000..65104ac601
 --- /dev/null
 +++ b/browser/content/celesta/index.html
-@@ -0,0 +1,72 @@
+@@ -0,0 +1,64 @@
 +<!DOCTYPE html>
 +<html lang="en">
 +<head>
@@ -114454,14 +114466,6 @@ index 0000000000..e0d77cb35e
 +    </svg>
 +    right-click anywhere to search
 +  </div>
-+
-+  <!-- Self-contained floating bubble chrome: tabs on top, bookmarks below -->
-+  <div id="chrome">
-+    <div class="chrome-title" aria-label="Celesta">Celesta ΓÇö Star Network</div>
-+    <div class="cluster" id="tabbar"></div>
-+    <div class="cluster" id="bookmarks"></div>
-+  </div>
-+
 +  <!-- Floating omnibox: appears where you right-click, clamped inside window -->
 +  <div id="omnibox" class="hidden">
 +    <div class="omni-row">
@@ -114484,6 +114488,7 @@ index 0000000000..e0d77cb35e
 +  <script src="chrome://celesta/content/boot.js"></script>
 +</body>
 +</html>
+\ No newline at end of file
 diff --git a/browser/content/celesta/notfound.css b/browser/content/celesta/notfound.css
 new file mode 100644
 index 0000000000..8f495be6bf
@@ -115346,10 +115351,10 @@ index 0000000000..4aff19f648
 +}
 diff --git a/browser/content/celesta/sites.js b/browser/content/celesta/sites.js
 new file mode 100644
-index 0000000000..3c9ac049d1
+index 0000000000..1961182a48
 --- /dev/null
 +++ b/browser/content/celesta/sites.js
-@@ -0,0 +1,336 @@
+@@ -0,0 +1,348 @@
 +/* ============================================================
 +   sites.js ΓÇö popular sites database for the Celesta start page
 +   pop: 1ΓÇô100 popularity score (rough global traffic rank). It sets the
@@ -115658,7 +115663,18 @@ index 0000000000..3c9ac049d1
 +   in several categories gets a bubble in each; sites with threat labels get
 +   a warning ring and a warning that lists them before they open. */
 +// a function, not top-level code: its loop gets the optimizing compiler
-+if (typeof RADAR_SITES !== "undefined") (function mergeRadar() {
++/* Prebuilt list (tools/build-sites-prebuilt.mjs): the same merged sites, shipped
++   as JSON so the page skips the radar export and its merge. */
++if (globalThis.CelestaPrebuilt) {
++  SITES.length = 0;
++  for (const r of globalThis.CelestaPrebuilt) {
++    SITES.push({
++      id: r[0], name: r[1], domain: r[2], cat: r[3], pop: r[4],
++      risk: r[5] || undefined, en: r[6] || undefined, sub: r[7] || undefined,
++    });
++  }
++  globalThis.CelestaPrebuilt = null;
++} else {if (typeof RADAR_SITES !== "undefined") (function mergeRadar() {
 +  // the curated sites win, then the first of a domain and its www. twin.
 +  // Every site object gets the same fields, so they all share one shape.
 +  const seen = new Set(SITES.filter((s) => !s.path).map((s) => s.domain));
@@ -115686,6 +115702,8 @@ index 0000000000..3c9ac049d1
 +  }
 +  RADAR_SITES = null;   // merged: the raw rows would only hold memory
 +})();
++}
+\ No newline at end of file
 diff --git a/browser/content/celesta/skin.css b/browser/content/celesta/skin.css
 new file mode 100644
 index 0000000000..14c216fcf3
@@ -115902,7 +115920,7 @@ index 0000000000..4d6fc8fdf4
 +Space.rendererMain();
 diff --git a/browser/content/celesta/space.js b/browser/content/celesta/space.js
 new file mode 100644
-index 0000000000..735468a0b8
+index 0000000000..a97fbd9ccd
 --- /dev/null
 +++ b/browser/content/celesta/space.js
 @@ -0,0 +1,502 @@
@@ -116248,7 +116266,7 @@ index 0000000000..735468a0b8
 +  }
 +
 +  let worker = null, canvas = null, ok = false, dpr = 1;
-+  const RENDER = 1.0;   /* near-native sky resolution (the 30fps throttle carries the
++  const RENDER = 0.65;  /* full-res sky cost ~1 s GPU per frame and made panning lag;
 +                           GPU budget now); was 0.5 ΓÇö the half-res stretch looked soft */
 +  let last = { t: 0, pan: { x: 0, y: 0 }, zoom: 1 };
 +
