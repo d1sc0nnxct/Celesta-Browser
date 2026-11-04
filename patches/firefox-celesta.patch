@@ -27161,15 +27161,16 @@ index 0000000000..c61a2dd825
 +!define INSTALL_INSTALLING_TEXT_COLOR 0xFFFFFF
 diff --git a/browser/branding/celesta/configure.sh b/browser/branding/celesta/configure.sh
 new file mode 100644
-index 0000000000..5f88960f21
+index 0000000000..a79755c330
 --- /dev/null
 +++ b/browser/branding/celesta/configure.sh
-@@ -0,0 +1,6 @@
+@@ -0,0 +1,7 @@
 +# This Source Code Form is subject to the terms of the Mozilla Public
 +# License, v. 2.0. If a copy of the MPL was not distributed with this
 +# file, You can obtain one at http://mozilla.org/MPL/2.0/.
 +
 +MOZ_APP_DISPLAYNAME="Celesta"
++MOZ_APP_BASENAME="Celesta"
 +MOZ_MACBUNDLE_ID=Celesta
 diff --git a/browser/branding/celesta/content/about-logo-private.png b/browser/branding/celesta/content/about-logo-private.png
 new file mode 100644
@@ -117529,6 +117530,21 @@ index a0dca5e087..9fc273734b 100644
  invalidHeaderValue=%S sent back a header with empty characters not allowed by web security standards.
 -networkProtocolError=Firefox has experienced a network protocol violation that cannot be repaired.
 +networkProtocolError=Celesta has experienced a network protocol violation that cannot be repaired.
+diff --git a/build/application.ini.in b/build/application.ini.in
+index 6df13230a4..5a7e9d41de 100644
+--- a/build/application.ini.in
++++ b/build/application.ini.in
+@@ -17,8 +17,8 @@
+ #include @TOPOBJDIR@/source-repo.h
+ [App]
+ Vendor=@MOZ_APP_VENDOR@
+-Name=@MOZ_APP_BASENAME@
+-RemotingName=@MOZ_APP_REMOTINGNAME@
++Name=Celesta
++RemotingName=celesta
+ #ifdef MOZ_APP_DISPLAYNAME
+ CodeName=@MOZ_APP_DISPLAYNAME@
+ #endif
 diff --git a/docshell/base/CanonicalBrowsingContext.cpp b/docshell/base/CanonicalBrowsingContext.cpp
 index b228b69167..c1f92f87c2 100644
 --- a/docshell/base/CanonicalBrowsingContext.cpp
