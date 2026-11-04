@@ -111877,10 +111877,10 @@ index 0000000000..cad8621b82
 +};
 diff --git a/browser/content/celesta/graph.js b/browser/content/celesta/graph.js
 new file mode 100644
-index 0000000000..ecc4f1c0a4
+index 0000000000..8b95ae22fe
 --- /dev/null
 +++ b/browser/content/celesta/graph.js
-@@ -0,0 +1,2540 @@
+@@ -0,0 +1,2544 @@
 +/* ============================================================
 +   Star network graph + right-click floating omnibox
 +   World coordinates: (0,0) = viewport center at scale 1
@@ -114253,10 +114253,14 @@ index 0000000000..ecc4f1c0a4
 +// layout is in world space, independent of the window: a resize only shifts the
 +// camera so the same world point stays in the middle
 +let lastW = innerWidth, lastH = innerHeight;
++let resizeTimer = 0;
 +addEventListener("resize", () => {
 +  pan.x += (innerWidth - lastW) / 2; pan.y += (innerHeight - lastH) / 2;
 +  lastW = innerWidth; lastH = innerHeight;
-+  zoomAnchor = null; applyScene(); Space.resize(); Bubbles.resize();
++  zoomAnchor = null; applyScene();
++  // canvases settle after the drag, so the window does not fight the resizer
++  clearTimeout(resizeTimer);
++  resizeTimer = setTimeout(() => { Space.resize(); Bubbles.resize(); }, 120);
 +});
 +
 +/* frame the most popular sites at home zoom; ZMIN lets the whole network fit */
@@ -115917,7 +115921,7 @@ index 0000000000..4d6fc8fdf4
 +Space.rendererMain();
 diff --git a/browser/content/celesta/space.js b/browser/content/celesta/space.js
 new file mode 100644
-index 0000000000..735468a0b8
+index 0000000000..402d29ea3e
 --- /dev/null
 +++ b/browser/content/celesta/space.js
 @@ -0,0 +1,502 @@
@@ -116062,7 +116066,7 @@ index 0000000000..735468a0b8
 +         with the page */
 +      float rs = (0.55 + 1.1 * b) * k, rr = max(rs, 0.7);
 +      float u = min(1.0, d / rr);
-+      float core = clamp(rr + 0.5 - d, 0.0, 1.0) * min(1.0, rs * rs / 0.49) * (1.0 - 0.6 * u * u);   /* brighter middle */
++      float core = exp(-2.4 * u * u) * min(1.0, rs * rs / 0.49);   /* gaussian core, not a flat disc */
 +      float g = d / (2.6 * rr);
 +      vec3 c = tint * s * (1.4 * core + 0.30 * exp(-g * g) + 0.08 * exp(-dh * dh * 0.014));
 +      if (spikes > 0.0 && b > 0.45) {
