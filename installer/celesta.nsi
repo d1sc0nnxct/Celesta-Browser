@@ -4,7 +4,7 @@ SetCompressor /SOLID lzma
 ManifestDPIAware true
 
 !define APPNAME "Celesta"
-!define VERSION "0.1.3"
+!define VERSION "0.2.0"
 !define PUBLISHER "Celesta"
 !define APPEXE "Celesta.exe"
 
