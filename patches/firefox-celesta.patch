@@ -1832,10 +1832,10 @@ index 61a4c0694b..1d17f32c50 100644
             mode="icons"
             class="browser-toolbar"
 diff --git a/browser/base/jar.mn b/browser/base/jar.mn
-index b2b5db6040..6505591221 100644
+index b2b5db6040..8f68106c4d 100644
 --- a/browser/base/jar.mn
 +++ b/browser/base/jar.mn
-@@ -1,106 +1,146 @@
+@@ -1,106 +1,145 @@
 -# This Source Code Form is subject to the terms of the Mozilla Public
 -# License, v. 2.0. If a copy of the MPL was not distributed with this
 -# file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -1958,7 +1958,6 @@ index b2b5db6040..6505591221 100644
 +        content/celesta/graph.js                        (../content/celesta/graph.js)
 +        content/celesta/sites-radar.js                  (../content/celesta/sites-radar.js)
 +        content/celesta/urlbar-sites.js                (../content/celesta/urlbar-sites.js)
-+        content/celesta/first-paint.jpg                (../content/celesta/first-paint.jpg)
 +        content/celesta/sites.bin                     (../content/celesta/sites.bin)
 +        content/celesta/sites.js                        (../content/celesta/sites.js)
 +        content/celesta/sites-layout.js                 (../content/celesta/sites-layout.js)
@@ -8030,10 +8029,10 @@ index e1dd88342e..d35c3fdf4e 100644
      }
 diff --git a/browser/content/celesta/boot.js b/browser/content/celesta/boot.js
 new file mode 100644
-index 0000000000..2d42377a51
+index 0000000000..45384c433b
 --- /dev/null
 +++ b/browser/content/celesta/boot.js
-@@ -0,0 +1,124 @@
+@@ -0,0 +1,96 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8065,13 +8064,6 @@ index 0000000000..2d42377a51
 +    document.head.appendChild(link);
 +  }
 +  document.body.classList.add("loading");
-+  // first paint: the bundled picture of the field, replaced by the last stored
-+  // one (if any); graph.js fades it out when the live map is ready
-+  const bootShot = document.createElement("img");
-+  bootShot.id = "bootshot";
-+  bootShot.alt = "";
-+  bootShot.src = "chrome://celesta/content/first-paint.jpg";
-+  document.body.appendChild(bootShot);
 +  let started = false;
 +  const start = () => {
 +    if (started) {
@@ -8135,28 +8127,7 @@ index 0000000000..2d42377a51
 +    start();
 +    return;
 +  }
-+  try {
-+    const open = indexedDB.open("Celesta", 1);
-+    open.onupgradeneeded = () => open.result.createObjectStore("kv");
-+    open.onerror = start;
-+    open.onsuccess = () => {
-+      try {
-+        const get = open.result.transaction("kv").objectStore("kv").get(`shot:v2:${innerWidth}x${innerHeight}@${devicePixelRatio}`);
-+        get.onerror = start;
-+        get.onsuccess = () => {
-+          if (get.result instanceof Blob) {
-+            bootShot.onload = () => performance.mark("Celesta-shot");   // load-time profiling
-+            bootShot.src = URL.createObjectURL(get.result);
-+          }
-+          start();
-+        };
-+      } catch {
-+        start();
-+      }
-+    };
-+  } catch {
-+    start();
-+  }
++  start();
 +})();
 diff --git a/browser/content/celesta/bubbles.js b/browser/content/celesta/bubbles.js
 new file mode 100644
@@ -14765,16 +14736,12 @@ index 0000000000..cad8621b82
 +    postMessage({ error: e.message });
 +  }
 +};
-diff --git a/browser/content/celesta/first-paint.jpg b/browser/content/celesta/first-paint.jpg
-new file mode 100644
-index 0000000000..8e3ee03292
-Binary files /dev/null and b/browser/content/celesta/first-paint.jpg differ
 diff --git a/browser/content/celesta/graph.js b/browser/content/celesta/graph.js
 new file mode 100644
-index 0000000000..70dc7c3152
+index 0000000000..5b04de9441
 --- /dev/null
 +++ b/browser/content/celesta/graph.js
-@@ -0,0 +1,2549 @@
+@@ -0,0 +1,2533 @@
 +/* ============================================================
 +   Star network graph + right-click floating omnibox
 +   World coordinates: (0,0) = viewport center at scale 1
@@ -15579,13 +15546,26 @@ index 0000000000..70dc7c3152
 +const LAYOUT_VERSION = 13;
 +function layoutKey() {
 +  // the hash of LAYOUT_VERSION + "|" + every site's id, pop, cat and sub joined
-+  // by ",", computed without building that string
++  // by ",", computed without building that string. On the packed catalogue the
++  // sites' string indexes hash in the strings' place: the string table is
++  // deterministic for a database, so its indexes identify the same strings at
++  // a hundredth of the cost (no 3.6M text decodes to hash 1.2M sites).
 +  let h = 0;
 +  const add = (str) => { for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0; };
 +  add(LAYOUT_VERSION + "|");
++  if (PACK) {
++    const r = PACK.rows, src = PACK.str;
++    for (let i = 0; i < SITES.length; i++) {
++      const o = i * 8;
++      h = (h * 31 + r[o]) | 0;   // id
++      h = (h * 31 + r[o + 4]) | 0;   // pop
++      h = (h * 31 + (r[o + 3] ^ (r[o + 7] << 8)) + 0x5bd1e995) | 0;   // cat, sub
++    }
++    return "layout:" + h;
++  }
 +  for (let i = 0; i < SITES.length; i++) {
 +    const s = SITES[i];
-+    add((i ? "," : "") + s.id + s.pop + s.cat + (s.sub || ""));
++    add((i ? "," : "") + s.id + s.pop + (s.cat || "other") + (s.sub || ""));
 +  }
 +  return "layout:" + h;
 +}
@@ -17194,31 +17174,6 @@ index 0000000000..70dc7c3152
 +    }
 +  }
 +});
-+/* the picture boot.js shows on the next load: the map at its home view,
-+   names faded in, untouched; kept per window size */
-+function saveShot(tries = 0) {
-+  if (touched || warp || savedCamera() || document.hidden || Bubbles.animating(performance.now())) return;
-+  // the sky's start-up (its shader) keeps the GPU process busy for seconds: after it
-+  if (!Space.ok && tries < 10) { setTimeout(() => saveShot(tries + 1), 1000); return; }
-+  const key = `shot:v2:${innerWidth}x${innerHeight}@${devicePixelRatio}`;
-+  Bubbles.shot(pan, zoom, spinTable).then((img) => {
-+    if (!img || touched) return;
-+    // GL rows come bottom first with premultiplied colour; ImageData wants neither
-+    const { w, h, pixels: src } = img, out = new Uint8ClampedArray(w * h * 4), row = w * 4;
-+    for (let y = 0; y < h; y++) {
-+      for (let i = (h - 1 - y) * row, o = y * row, end = i + row; i < end; i += 4, o += 4) {
-+        const a = src[i + 3];
-+        if (!a) continue;
-+        const k = 255 / a;
-+        out[o] = src[i] * k; out[o + 1] = src[i + 1] * k; out[o + 2] = src[i + 2] * k; out[o + 3] = a;
-+      }
-+    }
-+    const c = new OffscreenCanvas(w, h);
-+    c.getContext("2d").putImageData(new ImageData(out, w, h), 0, 0);
-+    return c.convertToBlob({ type: "image/webp", quality: 0.9 }).then((blob) => kvPut(key, blob));
-+  }).catch((e) => console.error("Celesta: saving the start picture failed", e));
-+}
-+
 +let touched = false;
 +for (const type of ["pointerdown", "wheel", "keydown"]) addEventListener(type, () => { touched = true; }, { capture: true });
 +// new tabs can be preloaded in the background at another window size: when
@@ -17260,10 +17215,6 @@ index 0000000000..70dc7c3152
 +    document.body.classList.remove("loading");
 +    buildSubLabels();
 +    buildFields();
-+    // the live map fades in over boot.js's picture
-+    const shot = $("#bootshot");
-+    if (shot) { shot.style.opacity = "0"; setTimeout(() => { URL.revokeObjectURL(shot.src); shot.remove(); }, 500); }
-+    if (!cam) setTimeout(saveShot, 2500);
 +  }, 0));
 +  kick();
 +});
@@ -18258,10 +18209,10 @@ index 0000000000..4aff19f648
 +}
 diff --git a/browser/content/celesta/sites.js b/browser/content/celesta/sites.js
 new file mode 100644
-index 0000000000..184e1cca69
+index 0000000000..c3d4d93a65
 --- /dev/null
 +++ b/browser/content/celesta/sites.js
-@@ -0,0 +1,429 @@
+@@ -0,0 +1,436 @@
 +/* ============================================================
 +   sites.js — popular sites database for the Celesta start page
 +   pop: 1–100 popularity score (rough global traffic rank). It sets the
@@ -18578,7 +18529,7 @@ index 0000000000..184e1cca69
 +    const o = i * 8, r = PACK.rows;
 +    this._i = i;
 +    this.pop = PACK.num(r[o + 4]);
-+    this.cat = PACK.str(r[o + 3]);
++    this._ct = r[o + 3];
 +    this._name = r[o + 1];
 +    this._domain = r[o + 2];
 +    this._id = r[o];
@@ -18589,6 +18540,7 @@ index 0000000000..184e1cca69
 +  get id() { return this._idv ??= PACK.str(this._id); }
 +  get name() { return this._nm ??= PACK.str(this._name); }
 +  get domain() { return this._dm ??= PACK.str(this._domain); }
++  get cat() { return this._ctv ??= PACK.str(this._ct); }
 +  get risk() { return this._rk ??= PACK.str(this._risk); }
 +  get en() { return this._en2 ??= PACK.str(this._en); }
 +  get sub() { return this._sb ??= PACK.str(this._sub); }
@@ -18653,12 +18605,18 @@ index 0000000000..184e1cca69
 +  const rows = new Uint32Array(buf, rowsOff, n * 8);
 +  const dec = new TextDecoder();
 +  const num = (v) => (v === 0xffffffff ? 0 : v);
++  // decoded strings by table index, filled only where they are actually read:
++  // categories repeat over the whole database, names and ids usually do not
++  // (they decode on first hover/lock), so caching by index parses the string
++  // table once and cuts the subarray-per-decode garbage too
++  const cache = [];
 +  PACK = {
 +    rows,
 +    num,
++    cache,
 +    str(i) {
 +      if (i === 0xffffffff) return undefined;
-+      return dec.decode(text.subarray(offs[i], offs[i + 1]));
++      return (cache[i] ??= dec.decode(text.subarray(offs[i], offs[i + 1])));
 +    },
 +  };
 +  SITES.length = 0;
@@ -19416,10 +19374,10 @@ index 0000000000..a97fbd9ccd
 +})();
 diff --git a/browser/content/celesta/style.css b/browser/content/celesta/style.css
 new file mode 100644
-index 0000000000..88adc876c1
+index 0000000000..a5a8c1eb04
 --- /dev/null
 +++ b/browser/content/celesta/style.css
-@@ -0,0 +1,530 @@
+@@ -0,0 +1,517 @@
 +/* ============================================================
 +   OLED black floating home — Obsidian-style star network
 +   Palette: true black canvas, glass panels, nebula accent
@@ -19521,14 +19479,6 @@ index 0000000000..88adc876c1
 +   a hundred times its size had its blurred shadow painted on the CPU) */
 +body.warping .sublabel > span { opacity: 0; transition: none; }
 +
-+/* boot.js: the last picture of the map, until the page is ready */
-+#bootshot {
-+  position: fixed; inset: 0;
-+  width: 100vw; height: 100vh;
-+  z-index: 1;
-+  pointer-events: none;
-+  transition: opacity .16s ease;
-+}
 +body.loading { cursor: progress; }
 +
 +/* profiling mode: graph.js #perfbox */
@@ -19945,11 +19895,6 @@ index 0000000000..88adc876c1
 +/* bubbles fade in and out instead of popping with their DOM nodes */
 +.node { transition: opacity .12s ease; }
 +.node.leaving { opacity: 0; }
-+
-+/* while the catalogue parses, show the field instead of an empty page */
-+body.loading {
-+  background: #000 url("chrome://celesta/content/first-paint.jpg") center / cover no-repeat;
-+}
 diff --git a/browser/content/celesta/urlbar-sites.js b/browser/content/celesta/urlbar-sites.js
 new file mode 100644
 index 0000000000..d627327011
