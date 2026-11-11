@@ -11,6 +11,7 @@ artifacts/
 sites-radar.js
 home/sites-radar.js
 home/sites-layout.js
+home/sites-layout.bin
 
 # OS / editor noise
 Thumbs.db

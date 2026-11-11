@@ -16,6 +16,17 @@ index 5ef8d2a02a..1487ce6720 100644
 +WIN32_MODULE_DESCRIPTION=Celesta
 +WIN32_MODULE_PRODUCTNAME=Celesta
 +WIN32_MODULE_NAME=Celesta
+diff --git a/browser/app/pbproxy/module.ver b/browser/app/pbproxy/module.ver
+index 5ef8d2a02a..ba5d07f829 100644
+--- a/browser/app/pbproxy/module.ver
++++ b/browser/app/pbproxy/module.ver
+@@ -6,3 +6,6 @@ WIN32_MODULE_TRADEMARKS=Firefox is a Trademark of The Mozilla Foundation.
+ WIN32_MODULE_DESCRIPTION=@MOZ_APP_DISPLAYNAME@
+ WIN32_MODULE_PRODUCTNAME=@MOZ_APP_DISPLAYNAME@
+ WIN32_MODULE_NAME=@MOZ_APP_DISPLAYNAME@
++
++# Note: *.exe.rc is regenerated only when re-created; the rule (config/rules.mk) does
++# not track this file, so after branding changes delete the generated obj-ff *.exe.rc.
 diff --git a/browser/app/profile/firefox.js b/browser/app/profile/firefox.js
 index 91fbfd4a56..4cdccfccf3 100644
 --- a/browser/app/profile/firefox.js
@@ -1832,10 +1843,10 @@ index 61a4c0694b..1d17f32c50 100644
             mode="icons"
             class="browser-toolbar"
 diff --git a/browser/base/jar.mn b/browser/base/jar.mn
-index b2b5db6040..8f68106c4d 100644
+index b2b5db6040..439e79d51b 100644
 --- a/browser/base/jar.mn
 +++ b/browser/base/jar.mn
-@@ -1,106 +1,145 @@
+@@ -1,106 +1,146 @@
 -# This Source Code Form is subject to the terms of the Mozilla Public
 -# License, v. 2.0. If a copy of the MPL was not distributed with this
 -# file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -1961,6 +1972,7 @@ index b2b5db6040..8f68106c4d 100644
 +        content/celesta/sites.bin                     (../content/celesta/sites.bin)
 +        content/celesta/sites.js                        (../content/celesta/sites.js)
 +        content/celesta/sites-layout.js                 (../content/celesta/sites-layout.js)
++        content/celesta/sites-layout.bin              (../content/celesta/sites-layout.bin)
 +        content/celesta/chrome.js                       (../content/celesta/chrome.js)
 +        content/celesta/chrome.css                      (../content/celesta/chrome.css)
 +        content/celesta/CelestaBarsChild.sys.mjs          (../content/celesta/CelestaBarsChild.sys.mjs)
@@ -2585,10 +2597,10 @@ index 0000000000..79a2cccfd6
 Binary files /dev/null and b/browser/branding/celesta/pbmode.ico differ
 diff --git a/browser/branding/celesta/pref/firefox-branding.js b/browser/branding/celesta/pref/firefox-branding.js
 new file mode 100644
-index 0000000000..a22224142a
+index 0000000000..ce0d371059
 --- /dev/null
 +++ b/browser/branding/celesta/pref/firefox-branding.js
-@@ -0,0 +1,262 @@
+@@ -0,0 +1,264 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -2690,6 +2702,8 @@ index 0000000000..a22224142a
 +// start page updates per second while moving (0 = every display refresh)
 +// frames a second the start page redraws at: 120, 60 or 30 (Settings > Home and startup)
 +pref("Celesta.home.maxFps", 60);
++// idle throttle: after 10 s without input the start page draws about once a second
++pref("Celesta.home.idleThrottle", true);
 +pref("Celesta.home.background.shaderFile", "");
 +// Celesta theme (Settings > Appearance; CelestaTheme.sys.mjs)
 +pref("Celesta.theme.mode", "dark");
@@ -5895,10 +5909,10 @@ index 7675fab225..1cb4ff7843 100644
 +  },
 +});
 diff --git a/browser/components/preferences/config/home-startup.mjs b/browser/components/preferences/config/home-startup.mjs
-index 4c19e7d08d..e3dd38ebbd 100644
+index 4c19e7d08d..b4e558fd6d 100644
 --- a/browser/components/preferences/config/home-startup.mjs
 +++ b/browser/components/preferences/config/home-startup.mjs
-@@ -1,845 +1,1001 @@
+@@ -1,845 +1,1004 @@
 -/* This Source Code Form is subject to the terms of the Mozilla Public
 - * License, v. 2.0. If a copy of the MPL was not distributed with this file,
 - * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7594,6 +7608,7 @@ index 4c19e7d08d..e3dd38ebbd 100644
 +Preferences.addAll([
 +  { id: "Celesta.home.warnFlagged", type: "bool" },
 +  { id: "Celesta.home.maxFps", type: "int" },
++  { id: "Celesta.home.idleThrottle", type: "bool" },
 +  { id: "Celesta.bars.autohide", type: "bool" },
 +  { id: "Celesta.bars.hideDelay", type: "int" },
 +  { id: "Celesta.bars.scale", type: "int" },
@@ -7610,6 +7625,7 @@ index 4c19e7d08d..e3dd38ebbd 100644
 +]);
 +Preferences.addSetting({ id: "CelestaWarnFlagged", pref: "Celesta.home.warnFlagged" });
 +Preferences.addSetting({ id: "CelestaHomeFps", pref: "Celesta.home.maxFps", get: value => String(value), set: value => Number(value) });
++Preferences.addSetting({ id: "CelestaIdleThrottle", pref: "Celesta.home.idleThrottle" });
 +Preferences.addSetting({ id: "CelestaBarsAutohide", pref: "Celesta.bars.autohide" });
 +Preferences.addSetting({
 +  id: "CelestaBarsHideDelay",
@@ -7659,6 +7675,7 @@ index 4c19e7d08d..e3dd38ebbd 100644
 +          { id: "CelestaHomeFps30", value: "30", l10nId: "Celesta-home-fps-30" },
 +        ],
 +      },
++      { id: "CelestaIdleThrottle", l10nId: "Celesta-home-idle-throttle" },
 +    ],
 +  },
 +  CelestaBars: {
@@ -9337,10 +9354,10 @@ index 0000000000..117381b29a
 +}
 diff --git a/browser/content/celesta/celestaHomeChild.sys.mjs b/browser/content/celesta/celestaHomeChild.sys.mjs
 new file mode 100644
-index 0000000000..d61b73ece7
+index 0000000000..9420513191
 --- /dev/null
 +++ b/browser/content/celesta/celestaHomeChild.sys.mjs
-@@ -0,0 +1,285 @@
+@@ -0,0 +1,387 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9356,6 +9373,7 @@ index 0000000000..d61b73ece7
 +  CelestaWarn: ["Celesta.home.warnFlagged", true],
 +  CelestaBg: ["Celesta.home.background", "nebula"],
 +  CelestaMaxFps: ["Celesta.home.maxFps", 60],
++  CelestaIdleThrottle: ["Celesta.home.idleThrottle", true],
 +  CelestaShaderFps: ["Celesta.theme.shaderFps", 30],
 +  CelestaProfiling: ["Celesta.profiling", false],
 +  CelestaBgColor: ["Celesta.home.background.color", "#05050a"],
@@ -9373,10 +9391,68 @@ index 0000000000..d61b73ece7
 +// the start pages in this process: one that moves tells the others ("Celesta-busy")
 +const pages = new Set();
 +
-+// the packed site catalogue, read once per process and shared by every start
-+// page here (datasetRequest); a promise resolving to the bytes, or to null
-+// when the read failed and only the parent hand-back is left
++// the packed site catalogue, read once per process and unpacked once per
++// process here (sharedPack), so every start page in this process views the
++// same ~107 MB rows/text instead of each cloning it. A promise resolving
++// to the bytes, or to null when the read failed and only the parent
++// hand-back is left.
 +let datasetBin = null;
++// the shipped layout's xy/links bytes (sites-layout.bin), same per-process cache
++let layoutBin = null;
++// unpacked, shared across tabs in this process: PACK-like views over the
++// single fetch (system realm, so each tab's code only reads them through
++// the waived-X-ray global instead of creating new views over a foreign
++// ArrayBuffer, which content code rejects)
++let sharedPack = null;
++let sharedLayout = null;
++
++// sites.bin and sites-layout.bin are read-only after unpack. Unpacking
++// once in this (system) realm gives every tab the same views with no copy.
++function unpackDataset(bytes) {
++  const buf = bytes.buffer;
++  const dv = new DataView(buf);
++  const n = dv.getUint32(4, true), ns = dv.getUint32(8, true), blen = dv.getUint32(12, true);
++  const offs = new Uint32Array(buf, 16, ns + 1);
++  const textOff = 16 + (ns + 1) * 4;
++  const rowsOff = (textOff + blen + 3) & ~3;
++  const text = new Uint8Array(buf, textOff, blen);
++  const rows = new Uint32Array(buf, rowsOff, n * 8);
++  const dec = new TextDecoder();
++  const CACHE_MAX = 50000;
++  const cache = new Map();
++  const num = (v) => (v === 0xffffffff ? 0 : v);
++  return {
++    rows,
++    num,
++    cache,
++    n,
++    str(i) {
++      if (i === 0xffffffff) {
++        return undefined;
++      }
++      let v = cache.get(i);
++      if (v === undefined) {
++        v = dec.decode(text.subarray(offs[i], offs[i + 1]));
++        if (cache.size >= CACHE_MAX) cache.clear();
++        cache.set(i, v);
++      }
++      return v;
++    },
++  };
++}
++function unpackLayout(bytes) {
++  const buf = bytes.buffer;
++  const head = new DataView(buf);
++  const n = head.getUint32(8, true), linkN = head.getUint32(16, true);
++  return {
++    magic: head.getUint32(0, false),
++    keyHash: head.getInt32(4, true),
++    n,
++    linkN,
++    xy: new Int32Array(buf, 20, 2 * n),
++    links: new Int32Array(buf, 20 + 8 * n, 2 * linkN),
++  };
++}
 +
 +/* A window shows one live start page over its tabs (chrome.js
 +   setUpSharedStart, loaded as about:home#Celesta-live); a tab on the start page
@@ -9509,6 +9585,7 @@ index 0000000000..d61b73ece7
 +    Services.prefs.addObserver("Celesta.home.stars", onChange);
 +    Services.prefs.addObserver("Celesta.theme.shaderFps", onFps);
 +    Services.prefs.addObserver("Celesta.home.maxFps", onFps);
++    Services.prefs.addObserver("Celesta.home.idleThrottle", onFps);
 +    Services.prefs.addObserver("Celesta.profiling", onProfiling);
 +    // removed in didDestroy, not on unload: an unload listener keeps the page out of the back/forward cache
 +    this.stopWatching = () => {
@@ -9516,6 +9593,7 @@ index 0000000000..d61b73ece7
 +      Services.prefs.removeObserver("Celesta.home.stars", onChange);
 +      Services.prefs.removeObserver("Celesta.theme.shaderFps", onFps);
 +      Services.prefs.removeObserver("Celesta.home.maxFps", onFps);
++      Services.prefs.removeObserver("Celesta.home.idleThrottle", onFps);
 +      Services.prefs.removeObserver("Celesta.profiling", onProfiling);
 +    };
 +    // the start page cannot load local images: image themes fall back to color
@@ -9566,7 +9644,24 @@ index 0000000000..d61b73ece7
 +          return null;   // fall back to the parent hand-back below
 +        }
 +      })();
-+      const bytes = (await datasetBin) || await this.sendQuery("CelestaHome:Dataset").catch(() => null);
++      layoutBin ??= (async () => {
++        try {
++          const r = await fetch("chrome://celesta/content/sites-layout.bin");
++          if (!r.ok) {
++            throw new Error("status " + r.status);
++          }
++          const b = await r.arrayBuffer();
++          return new Uint8Array(b);
++        } catch (e1) {
++          // only the cached or recomputed layout is left; say so, quietly
++          say("layout fail " + (e1 && (e1.message || e1.name)));
++          return null;
++        }
++      })();
++      const [bytes, lay] = await Promise.all([
++        datasetBin.then((b) => b || this.sendQuery("CelestaHome:Dataset").catch(() => null)),
++        layoutBin,
++      ]);
 +      mark(bytes?.length ? "got" : "no");
 +      if (bytes?.length && win && !win.closed) {
 +        const copy = Cu.cloneInto(bytes, win);
@@ -9576,12 +9671,36 @@ index 0000000000..d61b73ece7
 +        mark("set");
 +        say("bin " + bytes.length);
 +      }
++      if (lay?.length && win && !win.closed) {
++        const copy = Cu.cloneInto(lay, win);
++        Cu.waiveXrays(win).CelestaLayoutBin = copy.buffer;
++        say("layout " + lay.length);
++      }
++      // One window copy is now the owner: drop the child-process copies so
++      // a second window/tab re-fetches instead of holding a duplicate
++      // ~118 MB for the process lifetime.
++      if (bytes?.length) {
++        datasetBin = null;
++        layoutBin = null;
++        sharedPack = null;
++        sharedLayout = null;
++      }
 +    } catch (e) {
 +      say("fail " + (e && (e.message || e.name)));
 +    }
 +    if (win && !win.closed) {
 +      mark("ready");
 +      win.dispatchEvent(new win.Event("Celesta-dataset-ready"));
++      // a load storm of this size leaves plenty of garbage behind; collect it
++      // once the page has settled (a precise GC pauses in small slices)
++      setTimeout(() => {
++        if (win.closed || datasetBin == null) return;
++        try {
++          Cu.schedulePreciseGC(() => say("gc settled"));
++        } catch (e2) {
++          say("gc fail " + (e2 && (e2.message || e2.name)));
++        }
++      }, 90000);
 +    }
 +  }
 +
@@ -10118,10 +10237,10 @@ index 0000000000..acb2b9d540
 +}
 diff --git a/browser/content/celesta/celestaProfiler.sys.mjs b/browser/content/celesta/celestaProfiler.sys.mjs
 new file mode 100644
-index 0000000000..6b48c7dd38
+index 0000000000..f6b185630d
 --- /dev/null
 +++ b/browser/content/celesta/celestaProfiler.sys.mjs
-@@ -0,0 +1,429 @@
+@@ -0,0 +1,448 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10334,11 +10453,20 @@ index 0000000000..6b48c7dd38
 +    const name = (process || "main").replace(/=\S*/, "");
 +    let p = procs.get(name);
 +    if (!p) {
-+      p = { explicit: 0, js: 0, gfx: 0, images: 0, unclassified: 0 };
++      p = { explicit: 0, js: 0, gfx: 0, images: 0, unclassified: 0, top: [] };
 +      procs.set(name, p);
 +    }
 +    if (reportPath.startsWith("explicit/")) {
 +      p.explicit += amount;
++      if (reportPath !== "explicit/heap-unclassified") {
++        // keep the per-report peaks of big items: the heap-unclassified lump
++        // needs to be broken into the reporters that make it up
++        if (amount > 40 * MB) {
++          const at = p.top.findIndex(r => r.path === reportPath);
++          if (at < 0) p.top.push({ path: reportPath, amount });
++          else if (amount > p.top[at].amount) p.top[at].amount = amount;
++        }
++      }
 +      if (reportPath.includes("/js-")) {
 +        p.js += amount;
 +      } else if (reportPath.startsWith("explicit/gfx/")) {
@@ -10376,6 +10504,14 @@ index 0000000000..6b48c7dd38
 +      }
 +      watch("explicit memory of " + name, p.explicit, 50 * MB, 0.15, mb);
 +      watch("JS memory of " + name, p.js, 30 * MB, 0.15, mb);
++      // a process this big is only useful with its biggest items named: the
++      // heap-unclassified lump of 2–3 GB needs its reporters to be seen
++      if (p.explicit > 500 * MB && p.top.length) {
++        const top = p.top.slice().sort((a, b) => b.amount - a.amount).slice(0, 12);
++        for (const r of top) {
++          log(`MEM ${name}:   ${mb(r.amount)}  ${r.path}`);
++        }
++      }
 +      // small helper processes only when they grow
 +      if (p.explicit > 20 * MB || p["webgl-context-count"] || p["gpu-dedicated"]) {
 +        log(`MEM ${name}: ${out.join(", ")}`);
@@ -10383,7 +10519,9 @@ index 0000000000..6b48c7dd38
 +    }
 +    log(`MEM report took ${ms(ChromeUtils.now() - t0)} (it can itself cause a short hang)`);
 +  };
-+  mgr.getReports(handle, null, done, null, true);
++  // de-anonymized on purpose: the whole point is which window holds the
++  // megabytes (anonymized ids told us nothing about about:home vs. others)
++  mgr.getReports(handle, null, done, null, false);
 +}
 +
 +const consoleListener = {
@@ -14738,10 +14876,10 @@ index 0000000000..cad8621b82
 +};
 diff --git a/browser/content/celesta/graph.js b/browser/content/celesta/graph.js
 new file mode 100644
-index 0000000000..5b04de9441
+index 0000000000..aa5fc29b45
 --- /dev/null
 +++ b/browser/content/celesta/graph.js
-@@ -0,0 +1,2533 @@
+@@ -0,0 +1,2719 @@
 +/* ============================================================
 +   Star network graph + right-click floating omnibox
 +   World coordinates: (0,0) = viewport center at scale 1
@@ -14752,7 +14890,7 @@ index 0000000000..5b04de9441
 +/* diagnostics: startup errors land in a pref so they survive a headless run */
 +function dbg(k, v) { try { Services.prefs.setStringPref("celesta.debug." + k, String(v).slice(0, 200)); } catch {} }
 +function pageDiag(v) { try { dispatchEvent(new CustomEvent("Celesta-diag", { detail: String(v).slice(0, 200) })); } catch {} }
-+addEventListener("error", (e) => { pageDiag("error " + (e.message || e.type) + " @" + (e.filename || "").split("/").pop() + ":" + (e.lineno || 0)); });
++addEventListener("error", (e) => { const stack = (e.error && e.error.stack || "").split("\n").slice(0, 4).join(" | "); pageDiag("error " + (e.message || e.type) + " @" + (e.filename || "").split("/").pop() + ":" + (e.lineno || 0) + " :: " + String(stack).slice(0, 180)); });
 +addEventListener("unhandledrejection", (e) => { pageDiag("reject " + ((e.reason && (e.reason.message || e.reason)) || e.reason)); globalThis.performance?.mark("celesta-reject"); });
 +performance.mark("Celesta-graph");   // load-time profiling: after the site lists
 +
@@ -14825,12 +14963,14 @@ index 0000000000..5b04de9441
 +function setUpMotion() {
 +  const byCat = new Map(), byPart = new Map();
 +  for (const n of ringNodes) {
-+    if (n.cat === "other") { n.ci = BELT; continue; }
-+    const c = byCat.get(n.cat) || byCat.set(n.cat, { g: CAT_INDEX[n.cat], n: 0, x: 0, y: 0 }).get(n.cat);
-+    c.n++; c.x += n.home.x; c.y += n.home.y;
-+    const k = n.cat + "/" + (n.sub || "");
++    const oi = n._i, other = oi !== undefined && IS_OTHER ? !!IS_OTHER[oi] : n.cat === "other";
++    if (other) { n.ci = BELT; continue; }
++    const cat = n.cat, hx = oi !== undefined && HOME_X ? HOME_X[oi] : n.home.x, hy = oi !== undefined && HOME_Y ? HOME_Y[oi] : n.home.y;
++    const c = byCat.get(cat) || byCat.set(cat, { g: CAT_INDEX[cat], n: 0, x: 0, y: 0 }).get(cat);
++    c.n++; c.x += hx; c.y += hy;
++    const k = cat + "/" + (n.sub || "");
 +    const q = byPart.get(k) || byPart.set(k, { id: k, cloud: c, n: 0, x: 0, y: 0, r: 0, sites: [] }).get(k);
-+    q.n++; q.x += n.home.x; q.y += n.home.y; q.sites.push(n);
++    q.n++; q.x += hx; q.y += hy; q.sites.push(n);
 +  }
 +  clouds.length = 0;
 +  parts.length = 0;
@@ -14844,19 +14984,19 @@ index 0000000000..5b04de9441
 +  let idx = 0;
 +  for (const q of [...byPart.values()].sort((a, b) => b.n - a.n || (a.id < b.id ? -1 : 1))) {
 +    q.p0 = { x: q.x / q.n, y: q.y / q.n };
-+    for (const n of q.sites) q.r = Math.max(q.r, Math.hypot(n.home.x - q.p0.x, n.home.y - q.p0.y) + effR(n) + GAP / 2);
++    for (const n of q.sites) { const oi = n._i, hx = oi !== undefined && HOME_X ? HOME_X[oi] : n.home.x, hy = oi !== undefined && HOME_Y ? HOME_Y[oi] : n.home.y; q.r = Math.max(q.r, Math.hypot(hx - q.p0.x, hy - q.p0.y) + effR(n) + GAP / 2); }
 +    q.fixed = PART0 + parts.length >= MAX_GROUPS;
 +    q.g = q.fixed ? q.cloud.g : PART0 + parts.length;
 +    const h = hashOf(q.id);
 +    q.spin = q.fixed ? 0 : ((h & 1 ? 1 : -1) * (0.7 + (Math.abs(h) % 60) / 100) * 2 * Math.PI) / SUB_MS;
 +    q.site = new Float32Array(q.sites.length * 3);
 +    q.gi = new Int32Array(q.sites.length);
-+    q.sites.forEach((n, i) => { n.ci = q.g; n.idx = q.gi[i] = idx++; q.site.set([n.home.x - q.p0.x, n.home.y - q.p0.y, effR(n)], 3 * i); });
++    q.sites.forEach((n, i) => { n.ci = q.g; n.idx = q.gi[i] = idx++; const oi = n._i, hx = oi !== undefined && HOME_X ? HOME_X[oi] : n.home.x, hy = oi !== undefined && HOME_Y ? HOME_Y[oi] : n.home.y; q.site.set([hx - q.p0.x, hy - q.p0.y, effR(n)], 3 * i); });
 +    q.sites = null;
 +    q.field = null;
 +    parts.push(q);
 +  }
-+  for (const n of ringNodes) if (n.cat === "other") n.idx = idx++;
++  for (const n of ringNodes) if ((n._i !== undefined && IS_OTHER ? !!IS_OTHER[n._i] : n.cat === "other")) n.idx = idx++;
 +  OFF = new Float32Array(Math.ceil(idx / 1024) * 1024 * 2);
 +  OFFP = new Float32Array(OFF.length);
 +  spinLast = spinClock;
@@ -15162,10 +15302,25 @@ index 0000000000..5b04de9441
 +/* the clock's speed eases to 0 while the window is not focused (and back) */
 +const SPIN_EASE_MS = 1200;
 +let spinFocused = true;
++/* the galaxy starts turning while the first full draws are still warm: the
++   hold (armed by the ready handler) keeps the clock at rest for its first
++   2 seconds, and the rate ramps up over the next 2, so the map comes to
++   rest, draws once, and eases into turning instead of moving mid-jam */
++let spinHold = null;
++const SPIN_RAMP_MS = 2000;
 +function updateSpin(now = performance.now()) {
++  if (spinHold != null) {
++    if (performance.now() < spinHold + 2000) {
++      spinWall = now;          // the clock has not started yet: hold still
++      return;
++    }
++    spinHold = null;
++  }
 +  const dt = Math.max(0, now - spinWall), to = spinFocused ? 1 : 0, e = Math.exp(-dt / SPIN_EASE_MS);
-+  // the clock moves by the integral of its eased speed over dt
-+  spinClock += (to * dt + (spinRate - to) * SPIN_EASE_MS * (1 - e)) * Math.min(1, homeZoom / zoom);
++  // the clock moves by the integral of its eased speed over dt, easing up over
++  // SPIN_RAMP_MS after the hold so turning starts gently
++  spinClock += (to * dt + (spinRate - to) * SPIN_EASE_MS * (1 - e))
++    * Math.min(1, homeZoom / zoom) * Math.min(1, spinClock / SPIN_RAMP_MS);
 +  spinRate = to + (spinRate - to) * e;
 +  spinWall = now;
 +  const t = spinClock;
@@ -15226,18 +15381,63 @@ index 0000000000..5b04de9441
 +// is still computed (and cached) for the whole database
 +// si: the site's index in SITES, which is how the cached layout stores it
 +const showOther = setting("CelestaUncategorized", true) === "true";
++/* Node state for the packed catalogue: si/ci/hue/idx/home live in typed
++   arrays indexed by the site's row (_i), not as fields on 1.2M objects.
++   The accessors below keep every existing n.si / n.ci / ... read and write.
++   Plain (non-packed) objects keep their own fields and are untouched. */
++let NODE_CI = null, NODE_IDX = null, NODE_HUE = null, HOME_X = null, HOME_Y = null, HAS_HOME = null, IS_OTHER = null;
++if (PACK && typeof PackedSite === "function") {
++  const n = SITES.length;
++  NODE_CI = new Int32Array(n).fill(-1);
++  NODE_IDX = new Int32Array(n).fill(-1);
++  NODE_HUE = new Int16Array(n).fill(32767);   // sentinel: not set yet
++  HOME_X = new Float64Array(n); HOME_Y = new Float64Array(n); HAS_HOME = new Uint8Array(n);
++  IS_OTHER = new Uint8Array(n);
++  Object.defineProperties(PackedSite.prototype, {
++    si: { get() { return this._i; }, set() {}, enumerable: false, configurable: true },
++    ci: { get() { const v = NODE_CI[this._i]; return v < 0 ? undefined : v; }, set(v) { NODE_CI[this._i] = v == null ? -1 : v | 0; }, enumerable: false, configurable: true },
++    hue: { get() { const v = NODE_HUE[this._i]; return v === 32767 ? undefined : v; }, set(v) { NODE_HUE[this._i] = v == null ? 32767 : v | 0; }, enumerable: false, configurable: true },
++    idx: { get() { const v = NODE_IDX[this._i]; return v < 0 ? undefined : v; }, set(v) { NODE_IDX[this._i] = v == null ? -1 : v | 0; }, enumerable: false, configurable: true },
++    home: { get() { return HAS_HOME[this._i] ? { x: HOME_X[this._i], y: HOME_Y[this._i] } : undefined; }, set(v) { if (v == null) { HAS_HOME[this._i] = 0; return; } HOME_X[this._i] = v.x; HOME_Y[this._i] = v.y; HAS_HOME[this._i] = 1; }, enumerable: false, configurable: true },
++    pos: { get() { return HAS_HOME[this._i] ? { x: HOME_X[this._i], y: HOME_Y[this._i] } : undefined; }, set(v) { if (v == null) { HAS_HOME[this._i] = 0; return; } HOME_X[this._i] = v.x; HOME_Y[this._i] = v.y; HAS_HOME[this._i] = 1; }, enumerable: false, configurable: true },
++  });
++}
 +// the site objects themselves become the nodes: a copy of every one cost
 +// load time and memory
 +const SEED = { nodes: [], links: [] };
-+SITES.forEach((s, si) => {
-+  if (!showOther && s.cat === "other") return;
-+  s.si = si;
-+  s.ci = CAT_INDEX[s.cat] ?? CAT_INDEX.other;
-+  // a subcategory tints its sites a little away from the category's hue
-+  // hue jitter from the index, not the id string: ids are decoded lazily now
-+  s.hue ??= (CAT_HUE[s.cat] ?? 255) + hueJitter("s" + s.si);
-+  SEED.nodes.push(s);
-+});
++if (PACK && NODE_CI) {
++  // catIdx -> {ci, isOther, hue} from the ~22 distinct categories (decoded
++  // once); per-site work is a typed read + Map lookup, so no 1.2M cat decodes
++  // or _ctv memo slots are created for the dust belt.
++  const catInfo = new Map(), pr = PACK.rows;
++  for (let i = 0; i < SITES.length; i++) {
++    const cIdx = pr[i * 8 + 3];
++    if (!catInfo.has(cIdx)) {
++      const cat = PACK.str(cIdx) || "other";
++      catInfo.set(cIdx, { ci: CAT_INDEX[cat] ?? CAT_INDEX.other, isOther: cat === "other", hue: CAT_HUE[cat] ?? 255 });
++    }
++  }
++  for (let i = 0; i < SITES.length; i++) {
++    const info = catInfo.get(pr[i * 8 + 3]);
++    IS_OTHER[i] = info.isOther ? 1 : 0;
++    if (!showOther && info.isOther) continue;
++    NODE_CI[i] = info.ci;
++    // a subcategory tints its sites a little away from the category's hue
++    // hue jitter from the index, not the id string: ids are decoded lazily now
++    NODE_HUE[i] = info.hue + hueJitter("s" + i);
++    SEED.nodes.push(SITES[i]);
++  }
++} else {
++  SITES.forEach((s, si) => {
++    if (!showOther && s.cat === "other") return;
++    s.si = si;
++    s.ci = CAT_INDEX[s.cat] ?? CAT_INDEX.other;
++    // a subcategory tints its sites a little away from the category's hue
++    // hue jitter from the index, not the id string: ids are decoded lazily now
++    s.hue ??= (CAT_HUE[s.cat] ?? 255) + hueJitter("s" + s.si);
++    SEED.nodes.push(s);
++  });
++}
 +globalThis.performance?.mark("celesta-seed");   // load-time profiling: sites filtered/annotated into nodes
 +
 +/* lock-on target persists across reloads / back navigation */
@@ -15271,13 +15471,18 @@ index 0000000000..5b04de9441
 +
 +/* ---------------- build nodes & edges ---------------- */
 +const graphNodes = SEED.nodes;
-+const ringNodes = [...graphNodes];
++const ringNodes = graphNodes;   // alias: a separate 1.2M-pointer copy was pure overhead
 +
 +/* Popularity -> bubble diameter (single source of truth: layout clearance,
 +   DOM size and culling all read this). The most popular site in the
 +   database is 22x the diameter of the least popular: 8 px … 180 px. */
 +let POP_LO = Infinity, POP_HI = -Infinity;
-+for (const s of SITES) { POP_LO = Math.min(POP_LO, s.pop); POP_HI = Math.max(POP_HI, s.pop); }
++if (PACK) {
++  const r = PACK.rows;
++  for (let i = 0; i < SITES.length; i++) { const p = PACK.num(r[i * 8 + 4]); if (p < POP_LO) POP_LO = p; if (p > POP_HI) POP_HI = p; }
++} else {
++  for (const s of SITES) { POP_LO = Math.min(POP_LO, s.pop); POP_HI = Math.max(POP_HI, s.pop); }
++}
 +function bubbleSize(n) {
 +  const t = POP_HI > POP_LO ? ((n.pop ?? POP_LO) - POP_LO) / (POP_HI - POP_LO) : 1;
 +  const lo = n.cat === "other" ? 3 : 8;   // the uncategorized belt's dust goes smaller
@@ -15521,22 +15726,33 @@ index 0000000000..5b04de9441
 +}
 +
 +/* A large database takes seconds to lay out, and every Start page shares one
-+   process, so a cache miss computes in a worker; inline only as a fallback. */
++   process, so a cache miss computes in a worker; inline only as a fallback.
++   The site data travels by postMessage (structured clone), not as a
++   stringified program inside the Blob source: the old code embedded the
++   whole 1.2M-site JSON as text, which the Blob then held as ~134 MB of
++   DOM memory-file data plus a second copy in the worker. */
 +function computeLayoutOffThread() {
 +  const src = `"use strict";
-+    const SITES = ${JSON.stringify(SITES.map(({ id, cat, sub, pop }) => ({ id, cat, sub, pop })))}, SITE_CATEGORIES = ${JSON.stringify(SITE_CATEGORIES)};
-+    const GAP = ${GAP}, POP_LO = ${POP_LO}, POP_HI = ${POP_HI};
-+    const ringNodes = SITES.map((s) => ({ ...s }));
++    let SITES, SITE_CATEGORIES, GAP, POP_LO, POP_HI, ringNodes;
 +    ${bubbleSize}
 +    const effR = ${effR};
 +    const gapOf = ${gapOf};
 +    ${computeLayout}
-+    postMessage(computeLayout());`;
++    onmessage = ({ data }) => { SITES = data.sites; SITE_CATEGORIES = data.cats; GAP = data.gap; POP_LO = data.popLo; POP_HI = data.popHi; ringNodes = SITES.map((s) => ({ ...s })); postMessage(computeLayout()); };`;
 +  return new Promise((res) => {
 +    try {
 +      const w = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
 +      w.onmessage = ({ data }) => { w.terminate(); res(data); };
 +      w.onerror = (e) => { e.preventDefault(); w.terminate(); res(computeLayout()); };
++      let payload;
++      if (PACK) {
++        const r = PACK.rows, str = PACK.str, num = PACK.num, sites = new Array(SITES.length);
++        for (let i = 0; i < SITES.length; i++) { const o = i * 8; sites[i] = { id: str(r[o]), cat: str(r[o + 3]), sub: str(r[o + 7]), pop: num(r[o + 4]) }; }
++        payload = sites;
++      } else {
++        payload = SITES.map(({ id, cat, sub, pop }) => ({ id, cat, sub, pop }));
++      }
++      w.postMessage({ sites: payload, cats: SITE_CATEGORIES, gap: GAP, popLo: POP_LO, popHi: POP_HI });
 +    } catch { res(computeLayout()); }
 +  });
 +}
@@ -15573,15 +15789,59 @@ index 0000000000..5b04de9441
 +  const key = layoutKey();
 +  globalThis.performance?.mark("celesta-layoutkey");   // load-time profiling: hash of the database
 +  // the build ships the layout for its own database (tools/build-layout.mjs)
-+  const shipped = typeof SITES_LAYOUT !== "undefined" && SITES_LAYOUT.key === key;  dbg("layout", (shipped ? "shipped" : "computed") + ":" + SITES.length + ":" + key + ":" + (typeof SITES_LAYOUT !== "undefined" ? SITES_LAYOUT.key : "none"));
++  const shippedName = typeof SITES_LAYOUT !== "undefined" ? SITES_LAYOUT.key : "none";
++  // the xy/links bytes arrive as sites-layout.bin through the start page's
++  // actor (like the site catalogue). Prefer the unpacked shared layout
++  // (CelestaSharedLayout: views created once per process in the child) and
++  // fall back to the raw bin (per-tab cloned buffer).
++  const shared = globalThis.CelestaSharedLayout;
++  let shipped = shippedName === key && !!(shared || globalThis.CelestaLayoutBin); dbg("layout", (shipped ? "shipped" : "computed") + ":" + SITES.length + ":" + key + ":" + shippedName);
 +
-+  const decode = (b64) => new Int32Array((Uint8Array.fromBase64 ? Uint8Array.fromBase64(b64) : Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))).buffer);
-+  let cached = shipped ? { xy: decode(SITES_LAYOUT.xy), links: decode(SITES_LAYOUT.links) } : await kvGet(key);
++  let cached = null;
++  if (shipped && shared) {
++    try {
++      const expected = parseFloat(key.slice("layout:".length));
++      if (shared.magic !== 0x43534C59
++          || shared.keyHash !== expected
++          || shared.n !== SITES.length) {
++        throw new Error("layout bin mismatch");
++      }
++      cached = { xy: shared.xy, links: shared.links, shared: true };
++      globalThis.CelestaLayoutBin = null;
++      globalThis.CelestaSharedLayout = null;
++    } catch (e) {
++      shipped = false; dbg("layoutbin", String(e && (e.message || e.name)));
++    }
++  } else if (shipped) {
++    try {
++      const bin = globalThis.CelestaLayoutBin;
++      const head = new DataView(bin);
++      const n = head.getUint32(8, true), linkN = head.getUint32(16, true);
++      if (head.getUint32(0, false) !== 0x43534C59   // "CSLY"
++          || head.getInt32(4, true) !== parseFloat(key.slice("layout:".length))
++          || n !== SITES.length) {
++        throw new Error("layout bin mismatch");
++      }
++      cached = { xy: new Int32Array(bin, 20, 2 * n), links: new Int32Array(bin, 20 + 8 * n, 2 * linkN) };
++      globalThis.CelestaLayoutBin = null;
++    } catch (e) {
++      shipped = false; dbg("layoutbin", String(e && (e.message || e.name)));
++    }
++  }
++  if (!cached) cached = await kvGet(key);
 +  // stored as typed arrays indexed by SITES position: reading them back is a
-+  // copy, not tens of thousands of small arrays to rebuild
-+  if (!(cached?.xy instanceof Int32Array)) {
++  // copy, not tens of thousands of small arrays to rebuild. Shared views come
++  // from another realm, so instanceof cannot see them.
++  if (!(cached?.shared && cached?.xy) && !(cached?.xy instanceof Int32Array)) {
 +    const raw = await computeLayoutOffThread();
-+    const index = new Map(SITES.map((s, i) => [s.id, i]));
++    let index;
++    if (PACK) {
++      const r = PACK.rows, str = PACK.str;
++      index = new Map();
++      for (let i = 0; i < SITES.length; i++) index.set(str(r[i * 8]), i);
++    } else {
++      index = new Map(SITES.map((s, i) => [s.id, i]));
++    }
 +    const xy = new Int32Array(SITES.length * 2);
 +    for (const [id, x, y] of raw.pos) {
 +      const i = index.get(id);
@@ -15594,7 +15854,11 @@ index 0000000000..5b04de9441
 +  }
 +  const { xy, links } = cached;
 +  // pos is where a site is (posOf turns it with the galaxy): its layout position, not a copy
-+  for (const n of ringNodes) n.pos = n.home = { x: xy[2 * n.si], y: xy[2 * n.si + 1] };
++  if (HOME_X) {
++    for (const n of ringNodes) { const si = n._i; HOME_X[si] = xy[2 * si]; HOME_Y[si] = xy[2 * si + 1]; HAS_HOME[si] = 1; }
++  } else {
++    for (const n of ringNodes) n.pos = n.home = { x: xy[2 * n.si], y: xy[2 * n.si + 1] };
++  }
 +  SEED.links = links;
 +}
 +
@@ -15863,7 +16127,8 @@ index 0000000000..5b04de9441
 +    g.xs.push(n.home.x); g.ys.push(n.home.y);
 +  };
 +  for (const n of ringNodes) {
-+    if (!n.home || n.cat === "other") continue;
++    const oi = n._i, other = oi !== undefined && IS_OTHER ? !!IS_OTHER[oi] : n.cat === "other";
++    if ((oi !== undefined && HAS_HOME ? !HAS_HOME[oi] : !n.home) || other) continue;
 +    add(n.cat, n, n.cat, "", CAT_INDEX[n.cat]);
 +    if (n.sub) add(n.cat + "/" + n.sub, n, n.cat, n.sub, n.ci);
 +  }
@@ -16181,12 +16446,12 @@ index 0000000000..5b04de9441
 +  const S = Bubbles.STRIDE, data = new Float32Array(graphNodes.length * S);
 +  const grids = [];
 +  for (let i = 0; i < graphNodes.length; i++) {
-+    const n = graphNodes[i], h = n.home, size = bubbleSize(n), o = n.idx * S;
-+    data[o] = h.x; data[o + 1] = h.y; data[o + 2] = size / 2; data[o + 3] = n.hue ?? 230;
-+    data[o + 4] = n.risk ? 1 : n.cat === "other" ? 2 : 0;
++    const n = graphNodes[i], oi = n._i, hx = oi !== undefined && HOME_X ? HOME_X[oi] : n.home.x, hy = oi !== undefined && HOME_Y ? HOME_Y[oi] : n.home.y, size = bubbleSize(n), o = n.idx * S;
++    data[o] = hx; data[o + 1] = hy; data[o + 2] = size / 2; data[o + 3] = n.hue ?? 230;
++    data[o + 4] = oi !== undefined && PACK ? (PACK.rows[oi * 8 + 5] !== 4294967295 ? 1 : IS_OTHER[oi] ? 2 : 0) : (n.risk ? 1 : n.cat === "other" ? 2 : 0);
 +    data[o + 5] = n.ci;
 +    const grid = grids[n.ci] || (grids[n.ci] = new Map());
-+    const cx = Math.floor(h.x / GRID), cy = Math.floor(h.y / GRID), k = (cx + 32768) * 65536 + cy + 32768;
++    const cx = Math.floor(hx / GRID), cy = Math.floor(hy / GRID), k = (cx + 32768) * 65536 + cy + 32768;
 +    let cell = grid.get(k);
 +    if (!cell) grid.set(k, (cell = { x0: cx * GRID, y0: cy * GRID, x1: (cx + 1) * GRID, y1: (cy + 1) * GRID, list: [] }));
 +    cell.list.push(n);
@@ -16224,7 +16489,8 @@ index 0000000000..5b04de9441
 +      if (cell.x1 < q0 || cell.x0 > q1 || cell.y1 < p0 || cell.y0 > p1) continue;
 +      for (const n of cell.list) {
 +        if (bubbleSize(n) < min) break;
-+        const hx = c * n.home.x - s * n.home.y + tx, hy = s * n.home.x + c * n.home.y + ty;
++        const oi = n._i, nx = oi !== undefined && HOME_X ? HOME_X[oi] : n.home.x, ny = oi !== undefined && HOME_Y ? HOME_Y[oi] : n.home.y;
++        const hx = c * nx - s * ny + tx, hy = s * nx + c * ny + ty;
 +        const r = bubbleSize(n) / 2, w = Math.max(r, (n.name.length * 3.3 + 6) * textScale);
 +        if (hx + w >= x0 && hx - w <= x1 && hy + r + below >= y0 && hy - r <= y1) out.add(n);
 +      }
@@ -16468,7 +16734,16 @@ index 0000000000..5b04de9441
 +  [/spam/i, "sends or hosts spam"],
 +  [/parked|new/i, "a new or parked domain, often used briefly for abuse"],
 +];
-+const SITE_RISK = new Map(SITES.filter((s) => s.risk).map((s) => [s.domain, s.risk]));
++const SITE_RISK = (() => {
++  const m = new Map();
++  if (PACK) {
++    const r = PACK.rows, str = PACK.str;
++    for (let i = 0; i < SITES.length; i++) { const o = i * 8; if (r[o + 5] !== 4294967295) m.set(str(r[o + 2]), str(r[o + 5])); }
++  } else {
++    for (const s of SITES) if (s.risk) m.set(s.domain, s.risk);
++  }
++  return m;
++})();
 +const riskAllowed = new Set();
 +function riskOf(url) {
 +  let host;
@@ -16626,11 +16901,22 @@ index 0000000000..5b04de9441
 +  pushLabels();
 +}
 +
-+let searchIndex = null;
++let searchOrder = null;
 +function searchSites(q, limit, tags = []) {
-+  searchIndex ??= [...SEED.nodes].sort((a, b) => b.pop - a.pop).map((n) => [(n.name + " " + (n.en ? n.en + " " : "") + n.domain).toLowerCase(), n]);
++  // Sorted by popularity once (an int array); keys are decoded on the fly
++  // per query and discarded, instead of retaining 1.2M lowercased strings.
++  searchOrder ??= (function () {
++    const arr = new Array(SEED.nodes.length);
++    for (let i = 0; i < arr.length; i++) arr[i] = i;
++    arr.sort((a, b) => SEED.nodes[b].pop - SEED.nodes[a].pop);
++    return arr;
++  })();
 +  const out = [], seen = new Set();
-+  for (const [key, n] of searchIndex) {
++  let scanned = 0;
++  for (const idx of searchOrder) {
++    if (++scanned > 300000) break; // top-by-pop cap: rare long-tail queries miss, memory wins
++    const n = SEED.nodes[idx];
++    const key = (n.name + " " + (n.en ? n.en + " " : "") + n.domain).toLowerCase();
 +    if (key.includes(q) && !seen.has(n.domain) && matchesTags(n, tags)) {
 +      seen.add(n.domain);
 +      out.push(n);
@@ -16730,9 +17016,16 @@ index 0000000000..5b04de9441
 +let framePending = false, lastCamMoveAt = 0, spinDue = true;
 +// Pans, zooms and dives draw at up to 120 frames a second; the galaxy's own
 +// motion alone at the rate set in Settings > Home and startup (120, 60 or 30,
-+// read each frame), and at most 30 once nobody has touched it for a while (body.idle)
++// read each frame), and at most 8 once nobody has touched it for a while
++// (body.idle): at 30 fps the galaxy kept the GPU busy ~35 ms/frame forever,
++// which is most of the idle CPU burn (156–172% of a core) for one window.
++// With the idle throttle on (pref Celesta.home.idleThrottle, default on),
++// the idle rate drops further to a 1 fps heartbeat so a left-open window
++// costs almost nothing; any input clears body.idle and the full rate resumes
++// on the next frame. Off keeps the 8 fps idle rate above.
 +const maxFps = () => Math.max(1, Number(setting("CelestaMaxFps", 60)) || 60);
-+const motionMs = () => 1000 / (document.body.classList.contains("idle") ? Math.min(30, maxFps()) : maxFps());
++const idleThrottled = () => document.body.classList.contains("idle") && setting("CelestaIdleThrottle", true) === "true";
++const motionMs = () => 1000 / (idleThrottled() ? 1 : document.body.classList.contains("idle") ? Math.min(8, maxFps()) : maxFps());
 +let inViewAt = -1e9;
 +function kick() {
 +  if (!framePending) { framePending = true; requestAnimationFrame(frame); }
@@ -17106,11 +17399,17 @@ index 0000000000..5b04de9441
 +
 +// the sky gets the live camera (parallax pan, cursor-anchored zoom) at ~30 fps
 +// while the view moves; still, only its nebulae drift (~2 px/s), so 4 fps: each
-+// frame costs the GPU ~18 ms at full window size
++// frame costs the GPU ~18 ms at full window size. Idle-throttled (see
++// motionMs) the still rate is 1 fps and polls slower once the camera settled,
++// so a left-open window redraws the sky about once a second; a camera move
++// still draws at once and any input restores the full rate.
 +let mediaView = "", skyDrawnAt = 0;
 +(function skyLoop() {
 +  const now = performance.now();
-+  if (!document.hidden && skyOn && (skyShader || now - lastCamMoveAt < 1000 || now - skyDrawnAt >= 240)) {
++  const throttled = idleThrottled();
++  const stillGap = throttled ? 1000 : 240;
++  const camFresh = now - lastCamMoveAt < (throttled ? 250 : 1000);
++  if (!document.hidden && skyOn && ((skyShader && !throttled) || camFresh || now - skyDrawnAt >= stillGap)) {
 +    skyDrawnAt = now;
 +    Space.draw(now, pan, zoom);
 +  }
@@ -17127,7 +17426,7 @@ index 0000000000..5b04de9441
 +  }
 +  // a custom shader runs at the frame rate limit set in Settings
 +  const fps = Math.min(240, Math.max(1, +document.documentElement.dataset.CelestaShaderFps || 30));
-+  setTimeout(skyLoop, skyShader ? 1000 / fps : 33);
++  setTimeout(skyLoop, skyShader ? (throttled ? 1000 : 1000 / fps) : (throttled && now - lastCamMoveAt >= 250 ? 250 : 33));
 +})();
 +// layout is in world space, independent of the window: a resize only shifts the
 +// camera so the same world point stays in the middle
@@ -17146,14 +17445,14 @@ index 0000000000..5b04de9441
 +let allExtent = null, cloudExtent = null;
 +function extent(list) {
 +  let max = 0;
-+  for (const n of list) max = Math.max(max, Math.max(Math.abs(n.home.x), Math.abs(n.home.y) / 0.8) + bubbleSize(n));
++  for (const n of list) { const oi = n._i, hx = oi !== undefined && HOME_X ? HOME_X[oi] : n.home.x, hy = oi !== undefined && HOME_Y ? HOME_Y[oi] : n.home.y; max = Math.max(max, Math.max(Math.abs(hx), Math.abs(hy) / 0.8) + bubbleSize(n)); }
 +  return max;
 +}
 +function fitCamera() {
 +  // the whole network is measured once; the home view frames every category's
 +  // cloud (the asteroid belt of uncategorized sites lies around it)
 +  allExtent ??= extent(ringNodes);
-+  cloudExtent ??= extent(ringNodes.filter((n) => n.cat !== "other"));
++  cloudExtent ??= extent(IS_OTHER ? ringNodes.filter((n) => !IS_OTHER[n._i]) : ringNodes.filter((n) => n.cat !== "other"));
 +  const view = Math.min(innerWidth, innerHeight - 90) / 2;
 +  homeZoom = Math.min(1, view / cloudExtent);
 +  Space.setStarRef(homeZoom);
@@ -17208,13 +17507,38 @@ index 0000000000..5b04de9441
 +  // creating the first WebGL context on this thread can take up to a second:
 +  // only after the page has painted once
 +  requestAnimationFrame(() => setTimeout(() => {
++    const t0 = performance.now();
 +    Bubbles.init(); Bubbles.draw(pan, zoom, spinTable);
++    const initMs = Math.round(performance.now() - t0);
 +    performance.mark("Celesta-ready"); dispatchEvent(new Event("Celesta-ready"));
++    pageDiag("ready: bubbles init " + initMs + "ms");
++    spinHold = performance.now();     // the clock starts after the first draws settle
 +    // the pull out of the bubble plays once the page can draw it smoothly
 +    if (camReset) camReset.t0 = performance.now();
 +    document.body.classList.remove("loading");
 +    buildSubLabels();
 +    buildFields();
++    // load-time watch: report frames that stall once the map is up, so a
++    // freeze has a page-side witness (its stack the profiler has already)
++    const startAt = performance.now();
++    let was0 = startAt;
++    const watch = (t) => {
++      if (t - was0 > 250) pageDiag("frame gap " + Math.round(t - was0) + "ms at +" + Math.round(t - startAt) + "ms");
++      was0 = t;
++      if (t - startAt > 12000) return;
++      requestAnimationFrame(watch);
++    };
++    requestAnimationFrame(watch);
++    // one line a second for 25 s: was the loop alive, was the page hidden?
++    for (let s = 1; s <= 25; s++) {
++      setTimeout(() => pageDiag("t+" + s + "s hidden " + document.hidden + " moving " + (layoutDone && !document.hidden && spinFocused) + " clock " + Math.round(spinClock) + " frames " + plog.frames), s * 1000);
++    }
++    // the memory watch: live JS heap at one minute, five minutes and ten
++    const memAt = (s) => setTimeout(() => {
++      const m = performance.memory;
++      if (m) pageDiag("js heap at +~" + s + "s: used " + (m.usedJSHeapSize / 1e6).toFixed(0) + "MB total " + (m.totalJSHeapSize / 1e6).toFixed(0) + "MB");
++    }, s * 1000);
++    memAt(60); memAt(300); memAt(600);
 +  }, 0));
 +  kick();
 +});
@@ -18209,10 +18533,10 @@ index 0000000000..4aff19f648
 +}
 diff --git a/browser/content/celesta/sites.js b/browser/content/celesta/sites.js
 new file mode 100644
-index 0000000000..c3d4d93a65
+index 0000000000..ec52ff6b5b
 --- /dev/null
 +++ b/browser/content/celesta/sites.js
-@@ -0,0 +1,436 @@
+@@ -0,0 +1,467 @@
 +/* ============================================================
 +   sites.js — popular sites database for the Celesta start page
 +   pop: 1–100 popularity score (rough global traffic rank). It sets the
@@ -18524,26 +18848,30 @@ index 0000000000..c3d4d93a65
 +/* Binary catalogue (tools/build-sites-bin.mjs): a string blob plus fixed rows,
 +   so the page decodes names and domains only when it needs them. */
 +let PACK = null;
++/* A site is one row of PACK.rows (8 string-table indexes + pop): no copy of
++   those indexes lives on the object, so ~1.2M instances stay a single field
++   each (_i) on one shared prototype. graph.js adds the node-state accessors
++   (si/ci/hue/idx/home/pos) to this same prototype, backed by typed arrays. */
 +class PackedSite {
 +  constructor(i) {
-+    const o = i * 8, r = PACK.rows;
 +    this._i = i;
-+    this.pop = PACK.num(r[o + 4]);
-+    this._ct = r[o + 3];
-+    this._name = r[o + 1];
-+    this._domain = r[o + 2];
-+    this._id = r[o];
-+    this._risk = r[o + 5];
-+    this._en = r[o + 6];
-+    this._sub = r[o + 7];
 +  }
-+  get id() { return this._idv ??= PACK.str(this._id); }
-+  get name() { return this._nm ??= PACK.str(this._name); }
-+  get domain() { return this._dm ??= PACK.str(this._domain); }
-+  get cat() { return this._ctv ??= PACK.str(this._ct); }
-+  get risk() { return this._rk ??= PACK.str(this._risk); }
-+  get en() { return this._en2 ??= PACK.str(this._en); }
-+  get sub() { return this._sb ??= PACK.str(this._sub); }
++  get pop() { return this._pop ?? PACK.num(PACK.rows[this._i * 8 + 4]); }
++  set pop(v) { this._pop = v; }
++  get id() { return this._idv ??= PACK.str(PACK.rows[this._i * 8]); }
++  set id(v) { this._idv = v; }
++  get name() { return this._nm ??= PACK.str(PACK.rows[this._i * 8 + 1]); }
++  set name(v) { this._nm = v; }
++  get domain() { return this._dm ??= PACK.str(PACK.rows[this._i * 8 + 2]); }
++  set domain(v) { this._dm = v; }
++  get cat() { return this._ctv ??= PACK.str(PACK.rows[this._i * 8 + 3]); }
++  set cat(v) { this._ctv = v; }
++  get risk() { return this._rk ??= PACK.str(PACK.rows[this._i * 8 + 5]); }
++  set risk(v) { this._rk = v; }
++  get en() { return this._en2 ??= PACK.str(PACK.rows[this._i * 8 + 6]); }
++  set en(v) { this._en2 = v; }
++  get sub() { return this._sb ??= PACK.str(PACK.rows[this._i * 8 + 7]); }
++  set sub(v) { this._sb = v; }
 +}
 +function mergeRadarSites() {
 +  // the curated sites win, then the first of a domain and its www. twin.
@@ -18594,7 +18922,24 @@ index 0000000000..c3d4d93a65
 +  document.head.appendChild(s);
 +}
 +
-+if (globalThis.CelestaBin) { try {
++if (globalThis.CelestaSharedPack) { try {
++  const shared = globalThis.CelestaSharedPack;
++  PACK = shared;
++  const n = shared.n;
++  SITES.length = 0;
++  for (let i = 0; i < n; i++) SITES.push(new PackedSite(i));
++  globalThis.performance?.mark("celesta-packed");   // load-time profiling: after the site objects
++  globalThis.CelestaBin = null;
++  globalThis.CelestaSharedPack = null;
++  globalThis.CelestaCatalog = "bin";
++  finishSites("bin");
++} catch (e) {
++  try { PACK = null; SITES.length = 0; globalThis.CelestaBin = null; globalThis.CelestaSharedPack = null; } catch {}
++  try { dispatchEvent(new CustomEvent("Celesta-diag", { detail: "bin load " + (e && (e.message || e.name || String(e))) })); } catch {}
++  try { globalThis.performance?.mark("celesta-binfail"); } catch {}
++  loadRadarAndMerge();
++}
++} else if (globalThis.CelestaBin) { try {
 +  const buf = globalThis.CelestaBin;
 +  const dv = new DataView(buf);
 +  const n = dv.getUint32(4, true), ns = dv.getUint32(8, true), bytes = dv.getUint32(12, true);
@@ -18608,15 +18953,25 @@ index 0000000000..c3d4d93a65
 +  // decoded strings by table index, filled only where they are actually read:
 +  // categories repeat over the whole database, names and ids usually do not
 +  // (they decode on first hover/lock), so caching by index parses the string
-+  // table once and cuts the subarray-per-decode garbage too
-+  const cache = [];
++  // table once and cuts the subarray-per-decode garbage too. Bounded: names
++  // are ~1.2M unique entries, so an unbounded cache retains ~91 MB of latin1
++  // strings per window. When the bound is reached the cache is dropped and
++  // repopulates from the hot categories, keeping memory flat.
++  const CACHE_MAX = 50000;
++  const cache = new Map();
 +  PACK = {
 +    rows,
 +    num,
 +    cache,
 +    str(i) {
 +      if (i === 0xffffffff) return undefined;
-+      return (cache[i] ??= dec.decode(text.subarray(offs[i], offs[i + 1])));
++      let v = cache.get(i);
++      if (v === undefined) {
++        v = dec.decode(text.subarray(offs[i], offs[i + 1]));
++        if (cache.size >= CACHE_MAX) cache.clear();
++        cache.set(i, v);
++      }
++      return v;
 +    },
 +  };
 +  SITES.length = 0;
@@ -20075,7 +20430,7 @@ index dc6b059fe6..91048283d2 100644
  policy-DisableFirefoxStudies = Prevent { -brand-short-name } from running studies.
  
 diff --git a/browser/locales/en-US/browser/preferences/preferences.ftl b/browser/locales/en-US/browser/preferences/preferences.ftl
-index e36e667c52..109422d507 100644
+index e36e667c52..5c13c70d21 100644
 --- a/browser/locales/en-US/browser/preferences/preferences.ftl
 +++ b/browser/locales/en-US/browser/preferences/preferences.ftl
 @@ -1249,7 +1249,10 @@ containers-site-remove-button =
@@ -20108,7 +20463,7 @@ index e36e667c52..109422d507 100644
      .accesskey = A
  
  sync-engine-settings =
-@@ -2864,3 +2867,269 @@ referrals-section-header2 =
+@@ -2864,3 +2867,272 @@ referrals-section-header2 =
  # use the browser. "Share" here means recommending or referring the browser
  referrals-link2 =
    .label = Share { -brand-product-name }
@@ -20140,6 +20495,9 @@ index e36e667c52..109422d507 100644
 +    .label = Normal (60 frames a second)
 +Celesta-home-fps-30 =
 +    .label = Power saver (30 frames a second)
++Celesta-home-idle-throttle =
++    .label = Pause drawing when idle
++    .description = After 10 seconds without input, the start page redraws about once a second to save power. Motion resumes at once when you move the pointer or press a key.
 +Celesta-bars-header =
 +    .label = Floating bars
 +Celesta-bars-autohide =
@@ -20631,6 +20989,17 @@ index 0b907967c8..6442e36eaf 100644
    IDirectDraw7* GetDirectDraw();
  
    unsigned GetCompositorFeatureLevel() const;
+diff --git a/ipc/app/module.ver b/ipc/app/module.ver
+index 8abbd23f0e..a06a56e00f 100644
+--- a/ipc/app/module.ver
++++ b/ipc/app/module.ver
+@@ -4,3 +4,6 @@ WIN32_MODULE_PRODUCTVERSION_STRING=@MOZ_APP_VERSION@
+ WIN32_MODULE_DESCRIPTION=Plugin Container for @MOZ_APP_DISPLAYNAME@
+ WIN32_MODULE_PRODUCTNAME=@MOZ_APP_DISPLAYNAME@
+ WIN32_MODULE_NAME=@MOZ_APP_DISPLAYNAME@
++
++# Note: *.exe.rc is regenerated only when re-created; the rule (config/rules.mk) does
++# not track this file, so after branding changes delete the generated obj-ff *.exe.rc.
 diff --git a/toolkit/locales/en-US/toolkit/about/aboutAddons.ftl b/toolkit/locales/en-US/toolkit/about/aboutAddons.ftl
 index a1d4ced9dc..ca8ba38963 100644
 --- a/toolkit/locales/en-US/toolkit/about/aboutAddons.ftl
