@@ -14876,10 +14876,10 @@ index 0000000000..cad8621b82
 +};
 diff --git a/browser/content/celesta/graph.js b/browser/content/celesta/graph.js
 new file mode 100644
-index 0000000000..aa5fc29b45
+index 0000000000..4e2701ced4
 --- /dev/null
 +++ b/browser/content/celesta/graph.js
-@@ -0,0 +1,2719 @@
+@@ -0,0 +1,2736 @@
 +/* ============================================================
 +   Star network graph + right-click floating omnibox
 +   World coordinates: (0,0) = viewport center at scale 1
@@ -15308,6 +15308,7 @@ index 0000000000..aa5fc29b45
 +   rest, draws once, and eases into turning instead of moving mid-jam */
 +let spinHold = null;
 +const SPIN_RAMP_MS = 2000;
++let spinReleasedAt = -Infinity;   // harmless when no hold was armed: the ramp stays 1
 +function updateSpin(now = performance.now()) {
 +  if (spinHold != null) {
 +    if (performance.now() < spinHold + 2000) {
@@ -15315,12 +15316,13 @@ index 0000000000..aa5fc29b45
 +      return;
 +    }
 +    spinHold = null;
++    spinReleasedAt = now;
 +  }
 +  const dt = Math.max(0, now - spinWall), to = spinFocused ? 1 : 0, e = Math.exp(-dt / SPIN_EASE_MS);
 +  // the clock moves by the integral of its eased speed over dt, easing up over
 +  // SPIN_RAMP_MS after the hold so turning starts gently
 +  spinClock += (to * dt + (spinRate - to) * SPIN_EASE_MS * (1 - e))
-+    * Math.min(1, homeZoom / zoom) * Math.min(1, spinClock / SPIN_RAMP_MS);
++    * Math.min(1, homeZoom / zoom) * Math.min(1, (now - spinReleasedAt) / SPIN_RAMP_MS);
 +  spinRate = to + (spinRate - to) * e;
 +  spinWall = now;
 +  const t = spinClock;
@@ -17484,6 +17486,11 @@ index 0000000000..aa5fc29b45
 +});
 +
 +performance.mark("Celesta-script");
++// the 1.2M-object unpack triggers a non-incremental GC storm later
++// (MallocBytesTrigger, ~350ms pause). Absorb it on our own schedule instead
++try {
++  if (globalThis.Cu?.schedulePreciseGC) Cu.schedulePreciseGC(() => { try { performance.mark("Celesta-gcburst"); } catch {} });
++} catch (e) { /* not available here */ }
 +let layoutDone = false;
 +loadLayout().then(() => {
 +  performance.mark("Celesta-layout");
@@ -17500,18 +17507,26 @@ index 0000000000..aa5fc29b45
 +    resetCamera(null, 900, cam);
 +    clearDive();
 +  }
-+  buildDOM();
-+  buildChrome();
-+  applyScene();
-+  buildIndex();
++  performance.mark("Celesta-layoutdone");
++  const tStage = (k, t) => { performance.mark("Celesta-" + k); pageDiag(k + " " + Math.round(performance.now() - t) + "ms"); };
++  let t0 = performance.now();
++  buildDOM();            tStage("dom", t0); t0 = performance.now();
++  buildChrome();         tStage("chrome", t0); t0 = performance.now();
++  applyScene();          tStage("apply", t0); t0 = performance.now();
++  buildIndex();          tStage("index", t0); t0 = performance.now();
 +  // creating the first WebGL context on this thread can take up to a second:
-+  // only after the page has painted once
-+  requestAnimationFrame(() => setTimeout(() => {
++  // only after the page has painted once — but a hidden page can wait seconds
++  // on a 1 Hz rAF, so fall back to a timer if it doesn't come
++  let settled = false;
++  const beginReady = () => {
++    if (settled) return;
++    settled = true;
 +    const t0 = performance.now();
-+    Bubbles.init(); Bubbles.draw(pan, zoom, spinTable);
++    const hidden = document.hidden;
++    if (!hidden) { Bubbles.init(); Bubbles.draw(pan, zoom, spinTable); }
 +    const initMs = Math.round(performance.now() - t0);
 +    performance.mark("Celesta-ready"); dispatchEvent(new Event("Celesta-ready"));
-+    pageDiag("ready: bubbles init " + initMs + "ms");
++    pageDiag("ready: bubbles init " + initMs + "ms" + (hidden ? " (hidden, skipped draw)" : ""));
 +    spinHold = performance.now();     // the clock starts after the first draws settle
 +    // the pull out of the bubble plays once the page can draw it smoothly
 +    if (camReset) camReset.t0 = performance.now();
@@ -17539,7 +17554,9 @@ index 0000000000..aa5fc29b45
 +      if (m) pageDiag("js heap at +~" + s + "s: used " + (m.usedJSHeapSize / 1e6).toFixed(0) + "MB total " + (m.totalJSHeapSize / 1e6).toFixed(0) + "MB");
 +    }, s * 1000);
 +    memAt(60); memAt(300); memAt(600);
-+  }, 0));
++  };
++  requestAnimationFrame(beginReady);
++  setTimeout(beginReady, 900);   // a hidden page gets its rAF at 1 Hz at best: don't wait for it
 +  kick();
 +});
 +/* The shared start page shown for a tab: the view in history.state is that
