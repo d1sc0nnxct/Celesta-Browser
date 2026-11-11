@@ -14876,10 +14876,10 @@ index 0000000000..cad8621b82
 +};
 diff --git a/browser/content/celesta/graph.js b/browser/content/celesta/graph.js
 new file mode 100644
-index 0000000000..1604ed8e2c
+index 0000000000..d61500e079
 --- /dev/null
 +++ b/browser/content/celesta/graph.js
-@@ -0,0 +1,2765 @@
+@@ -0,0 +1,2750 @@
 +/* ============================================================
 +   Star network graph + right-click floating omnibox
 +   World coordinates: (0,0) = viewport center at scale 1
@@ -17349,48 +17349,33 @@ index 0000000000..1604ed8e2c
 +// the GPU busy for seconds, and the page's first paint would wait behind it.
 +// A custom shader (Settings > Home) arrives from CelestaHomeChild a moment
 +// after this script runs; the built-in sky starts if it never comes.
-+// It also waits for the pull out of a bubble after Back: the page's frames
-+// would wait behind the compile.
-+const bubblesShown = new Promise((res) => {
-+  addEventListener("Celesta-ready", () => setTimeout(res, camReset ? camReset.dur + 150 : 0), { once: true });
-+  setTimeout(res, 6000);
-+}).then(skyFree);
-+/* A start page nobody sees yet (the preloaded new tab) builds its sky once
-+   it is shown, or once no start page has moved for 3 s: the build holds the
-+   GPU process's WebGL thread, which the page in use draws with too.
-+   CelestaHomeChild passes "Celesta-busy" on to the other start pages (about:home
-+   and about:newtab are different origins, so no channel of their own). */
++// Now the sky starts together with the bubbles (before `body.loading` goes):
++// both spikes land in the shimmer instead of "revealed but frozen".
 +let othersBusyAt = performance.now(), busySentAt = 0;
 +addEventListener("Celesta-others-busy", () => { othersBusyAt = performance.now(); });
-+function skyFree() {
-+  return new Promise((res) => {
-+    const check = () => (!document.hidden || performance.now() - othersBusyAt > 3000 ? res() : setTimeout(check, 500));
-+    check();
-+  });
-+}
 +function tellBusy(t) {
 +  if (t - busySentAt > 500) { busySentAt = t; dispatchEvent(new Event("Celesta-busy")); }
 +}
 +// skyShader: the custom shader the sky runs (null: the built-in sky), undefined until it starts
 +let skyShader;
-+bubblesShown.then(() => {
-+if (setting("CelestaBg", "nebula") === "shader") {
-+  const start = () => {
-+    if (skyShader !== undefined) return;
-+    skyShader = SETTINGS.CelestaShader || null;
-+    Space.init(null, null, skyShader);
-+  };
-+  addEventListener("Celesta-background", start, { once: true });
-+  setTimeout(start, 2000);
-+} else {
-+  skyShader = null;
-+  Space.init();
++function startSky() {
++  if (setting("CelestaBg", "nebula") === "shader") {
++    const start = () => {
++      if (skyShader !== undefined) return;
++      skyShader = SETTINGS.CelestaShader || null;
++      Space.init(null, null, skyShader);
++    };
++    addEventListener("Celesta-background", start, { once: true });
++    setTimeout(start, 2000);
++  } else {
++    skyShader = null;
++    Space.init();
++  }
++  // the sky as a picture for the next start page and the other pages (CelestaHomeChild)
++  if (SETTINGS.CelestaSnapFresh !== "true") {
++    setTimeout(() => Space.snapshot().then((blob) => blob && dispatchEvent(new CustomEvent("Celesta-snapshot", { detail: blob }))), 4000);
++  }
 +}
-+// the sky as a picture for the next start page and the other pages (CelestaHomeChild)
-+if (SETTINGS.CelestaSnapFresh !== "true") {
-+  setTimeout(() => Space.snapshot().then((blob) => blob && dispatchEvent(new CustomEvent("Celesta-snapshot", { detail: blob }))), 4000);
-+}
-+});
 +
 +/* Background (Settings > Home): the sky shader with or without nebulae, a
 +   plain color, or a picture, GIF or video. CelestaHomeChild delivers a file as
@@ -17550,7 +17535,7 @@ index 0000000000..1604ed8e2c
 +    settled = true;
 +    const t0 = performance.now();
 +    const hidden = document.hidden;
-+    if (!hidden) { Bubbles.init(); Bubbles.draw(pan, zoom, spinTable); }
++    if (!hidden) { Bubbles.init(); Bubbles.draw(pan, zoom, spinTable); startSky(); }
 +    const initMs = Math.round(performance.now() - t0);
 +    performance.mark("Celesta-ready"); dispatchEvent(new Event("Celesta-ready"));
 +    pageDiag("ready: bubbles init " + initMs + "ms" + (hidden ? " (hidden, skipped draw)" : ""));
