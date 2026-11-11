@@ -14876,10 +14876,10 @@ index 0000000000..cad8621b82
 +};
 diff --git a/browser/content/celesta/graph.js b/browser/content/celesta/graph.js
 new file mode 100644
-index 0000000000..4e2701ced4
+index 0000000000..dfa5026696
 --- /dev/null
 +++ b/browser/content/celesta/graph.js
-@@ -0,0 +1,2736 @@
+@@ -0,0 +1,2753 @@
 +/* ============================================================
 +   Star network graph + right-click floating omnibox
 +   World coordinates: (0,0) = viewport center at scale 1
@@ -16443,32 +16443,49 @@ index 0000000000..4e2701ced4
 +const groupCells = [];
 +let shown = new Set();
 +let maxBubble = 0;
-+function buildIndex() {
++/* Paced in ~60 ms slices so the load path doesn't hold the main thread for
++   over a second: sets `Celesta-index` when done. `done` (optional) runs after
++   the uploads; callers (ready handler) use it to gate the first frame. */
++function buildIndex(done) {
 +  setUpMotion();
 +  const S = Bubbles.STRIDE, data = new Float32Array(graphNodes.length * S);
 +  const grids = [];
-+  for (let i = 0; i < graphNodes.length; i++) {
-+    const n = graphNodes[i], oi = n._i, hx = oi !== undefined && HOME_X ? HOME_X[oi] : n.home.x, hy = oi !== undefined && HOME_Y ? HOME_Y[oi] : n.home.y, size = bubbleSize(n), o = n.idx * S;
-+    data[o] = hx; data[o + 1] = hy; data[o + 2] = size / 2; data[o + 3] = n.hue ?? 230;
-+    data[o + 4] = oi !== undefined && PACK ? (PACK.rows[oi * 8 + 5] !== 4294967295 ? 1 : IS_OTHER[oi] ? 2 : 0) : (n.risk ? 1 : n.cat === "other" ? 2 : 0);
-+    data[o + 5] = n.ci;
-+    const grid = grids[n.ci] || (grids[n.ci] = new Map());
-+    const cx = Math.floor(hx / GRID), cy = Math.floor(hy / GRID), k = (cx + 32768) * 65536 + cy + 32768;
-+    let cell = grid.get(k);
-+    if (!cell) grid.set(k, (cell = { x0: cx * GRID, y0: cy * GRID, x1: (cx + 1) * GRID, y1: (cy + 1) * GRID, list: [] }));
-+    cell.list.push(n);
-+    if (size > maxBubble) maxBubble = size;
-+  }
-+  grids.forEach((grid, g) => {
-+    groupCells[g] = [...grid.values()];
-+    for (const cell of groupCells[g]) cell.list.sort((a, b) => b.pop - a.pop);
-+  });
-+  Bubbles.setSites(data);
-+  Bubbles.setOffsets(OFF, 0, 0);
-+  // the links, drawn on the GPU under the bubbles
-+  const lines = new Float32Array(EDGES.length * Bubbles.EDGE_STRIDE);
-+  EDGES.forEach((e, k) => lines.set([e.a.home.x, e.a.home.y, e.b.home.x, e.b.home.y, e.a.idx, e.b.idx, bubbleSize(e.a) / 2, bubbleSize(e.b) / 2, e.a.ci, e.b.ci], k * Bubbles.EDGE_STRIDE));
-+  Bubbles.setEdges(lines);
++  const N = graphNodes.length, T_SLICE = 60;
++  let i = 0;
++  const fill = () => {
++    const tEnd = performance.now() + T_SLICE;
++    while (i < N && performance.now() < tEnd) {
++      const n = graphNodes[i], oi = n._i, hx = oi !== undefined && HOME_X ? HOME_X[oi] : n.home.x, hy = oi !== undefined && HOME_Y ? HOME_Y[oi] : n.home.y, size = bubbleSize(n), o = n.idx * S;
++      data[o] = hx; data[o + 1] = hy; data[o + 2] = size / 2; data[o + 3] = n.hue ?? 230;
++      data[o + 4] = oi !== undefined && PACK ? (PACK.rows[oi * 8 + 5] !== 4294967295 ? 1 : IS_OTHER[oi] ? 2 : 0) : (n.risk ? 1 : n.cat === "other" ? 2 : 0);
++      data[o + 5] = n.ci;
++      const grid = grids[n.ci] || (grids[n.ci] = new Map());
++      const cx = Math.floor(hx / GRID), cy = Math.floor(hy / GRID), k = (cx + 32768) * 65536 + cy + 32768;
++      let cell = grid.get(k);
++      if (!cell) grid.set(k, (cell = { x0: cx * GRID, y0: cy * GRID, x1: (cx + 1) * GRID, y1: (cy + 1) * GRID, list: [] }));
++      cell.list.push(n);
++      if (size > maxBubble) maxBubble = size;
++      i++;
++    }
++    if (i < N) { setTimeout(fill, 0); return; }
++    // the cells' lists stay biggest-first so callers can stop at small ones
++    const finish = () => {
++      grids.forEach((grid, g) => {
++        groupCells[g] = [...grid.values()];
++        for (const cell of groupCells[g]) if (cell.list.length > 1) cell.list.sort((a, b) => b.pop - a.pop);
++      });
++      Bubbles.setSites(data);
++      Bubbles.setOffsets(OFF, 0, 0);
++      // the links, drawn on the GPU under the bubbles
++      const lines = new Float32Array(EDGES.length * Bubbles.EDGE_STRIDE);
++      EDGES.forEach((e, k) => lines.set([e.a.home.x, e.a.home.y, e.b.home.x, e.b.home.y, e.a.idx, e.b.idx, bubbleSize(e.a) / 2, bubbleSize(e.b) / 2, e.a.ci, e.b.ci], k * Bubbles.EDGE_STRIDE));
++      Bubbles.setEdges(lines);
++      performance.mark("Celesta-index");
++      if (done) done();
++    };
++    finish();
++  };
++  fill();
 +}
 +/* sites that need a DOM bubble at this zoom and whose circle or name touches
 +   the visible world rect. A name is ~6.5 px per character wide and ~32 px
@@ -17513,10 +17530,8 @@ index 0000000000..4e2701ced4
 +  buildDOM();            tStage("dom", t0); t0 = performance.now();
 +  buildChrome();         tStage("chrome", t0); t0 = performance.now();
 +  applyScene();          tStage("apply", t0); t0 = performance.now();
-+  buildIndex();          tStage("index", t0); t0 = performance.now();
-+  // creating the first WebGL context on this thread can take up to a second:
-+  // only after the page has painted once — but a hidden page can wait seconds
-+  // on a 1 Hz rAF, so fall back to a timer if it doesn't come
++  // the spatial index (~1.3 s of work) runs in ~60 ms slices; beginReady is
++  // armed only once it's done, so the first frame still has its data
 +  let settled = false;
 +  const beginReady = () => {
 +    if (settled) return;
@@ -17555,8 +17570,10 @@ index 0000000000..4e2701ced4
 +    }, s * 1000);
 +    memAt(60); memAt(300); memAt(600);
 +  };
-+  requestAnimationFrame(beginReady);
-+  setTimeout(beginReady, 900);   // a hidden page gets its rAF at 1 Hz at best: don't wait for it
++  buildIndex(() => {
++    requestAnimationFrame(beginReady);
++    setTimeout(beginReady, 900);   // a hidden page gets its rAF at 1 Hz at best: don't wait for it
++  });
 +  kick();
 +});
 +/* The shared start page shown for a tab: the view in history.state is that
