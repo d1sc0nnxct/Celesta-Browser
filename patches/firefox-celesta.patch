@@ -14876,10 +14876,10 @@ index 0000000000..cad8621b82
 +};
 diff --git a/browser/content/celesta/graph.js b/browser/content/celesta/graph.js
 new file mode 100644
-index 0000000000..dfa5026696
+index 0000000000..1604ed8e2c
 --- /dev/null
 +++ b/browser/content/celesta/graph.js
-@@ -0,0 +1,2753 @@
+@@ -0,0 +1,2765 @@
 +/* ============================================================
 +   Star network graph + right-click floating omnibox
 +   World coordinates: (0,0) = viewport center at scale 1
@@ -16443,21 +16443,33 @@ index 0000000000..dfa5026696
 +const groupCells = [];
 +let shown = new Set();
 +let maxBubble = 0;
-+/* Paced in ~60 ms slices so the load path doesn't hold the main thread for
-+   over a second: sets `Celesta-index` when done. `done` (optional) runs after
-+   the uploads; callers (ready handler) use it to gate the first frame. */
++/* Paced in ~120 ms slices so the load path doesn't hold the main thread for
++   over a second; reads pop/hue straight from the typed rows (the prototype
++   getters are function calls the 1.2M-loop can't afford). Sets
++   `Celesta-index` when done; `done` gates the first frame. */
 +function buildIndex(done) {
 +  setUpMotion();
 +  const S = Bubbles.STRIDE, data = new Float32Array(graphNodes.length * S);
 +  const grids = [];
-+  const N = graphNodes.length, T_SLICE = 60;
++  const N = graphNodes.length, T_SLICE = 120;
++  const pack = !!PACK, rows = pack ? PACK.rows : null;
++  const numRow = (v) => (v === 4294967295 ? 0 : v);
++  const popRow = pack ? (n) => numRow(rows[n._i * 8 + 4]) : (n) => n.pop;
++  const hueRow = pack && NODE_HUE ? (n) => (NODE_HUE[n._i] === 32767 ? 255 : NODE_HUE[n._i]) : (n) => n.hue ?? 230;
++  const riskRow = pack ? (n) => rows[n._i * 8 + 5] : (n) => (n.risk ? 1 : undefined);
 +  let i = 0;
 +  const fill = () => {
 +    const tEnd = performance.now() + T_SLICE;
 +    while (i < N && performance.now() < tEnd) {
-+      const n = graphNodes[i], oi = n._i, hx = oi !== undefined && HOME_X ? HOME_X[oi] : n.home.x, hy = oi !== undefined && HOME_Y ? HOME_Y[oi] : n.home.y, size = bubbleSize(n), o = n.idx * S;
-+      data[o] = hx; data[o + 1] = hy; data[o + 2] = size / 2; data[o + 3] = n.hue ?? 230;
-+      data[o + 4] = oi !== undefined && PACK ? (PACK.rows[oi * 8 + 5] !== 4294967295 ? 1 : IS_OTHER[oi] ? 2 : 0) : (n.risk ? 1 : n.cat === "other" ? 2 : 0);
++      const n = graphNodes[i], oi = n._i, hx = oi !== undefined && HOME_X ? HOME_X[oi] : n.home.x, hy = oi !== undefined && HOME_Y ? HOME_Y[oi] : n.home.y;
++      const pop = pack ? numRow(rows[oi * 8 + 4]) : n.pop;
++      const t = POP_HI > POP_LO ? (pop - POP_LO) / (POP_HI - POP_LO) : 1;
++      const isOther = pack ? IS_OTHER[oi] : n.cat === "other";
++      const lo = isOther ? 3 : 8;
++      const size = lo + (180 - lo) * t;
++      const o = n.idx * S;
++      data[o] = hx; data[o + 1] = hy; data[o + 2] = size / 2; data[o + 3] = hueRow(n);
++      data[o + 4] = pack ? (riskRow(n) !== 4294967295 ? 1 : isOther ? 2 : 0) : (n.risk ? 1 : isOther ? 2 : 0);
 +      data[o + 5] = n.ci;
 +      const grid = grids[n.ci] || (grids[n.ci] = new Map());
 +      const cx = Math.floor(hx / GRID), cy = Math.floor(hy / GRID), k = (cx + 32768) * 65536 + cy + 32768;
@@ -16472,7 +16484,7 @@ index 0000000000..dfa5026696
 +    const finish = () => {
 +      grids.forEach((grid, g) => {
 +        groupCells[g] = [...grid.values()];
-+        for (const cell of groupCells[g]) if (cell.list.length > 1) cell.list.sort((a, b) => b.pop - a.pop);
++        for (const cell of groupCells[g]) if (cell.list.length > 1) cell.list.sort((a, b) => popRow(b) - popRow(a));
 +      });
 +      Bubbles.setSites(data);
 +      Bubbles.setOffsets(OFF, 0, 0);
