@@ -14902,10 +14902,10 @@ index 0000000000..cad8621b82
 +};
 diff --git a/browser/content/celesta/graph.js b/browser/content/celesta/graph.js
 new file mode 100644
-index 0000000000..ac3ee6ffd6
+index 0000000000..e727775932
 --- /dev/null
 +++ b/browser/content/celesta/graph.js
-@@ -0,0 +1,2773 @@
+@@ -0,0 +1,2782 @@
 +/* ============================================================
 +   Star network graph + right-click floating omnibox
 +   World coordinates: (0,0) = viewport center at scale 1
@@ -17589,11 +17589,20 @@ index 0000000000..ac3ee6ffd6
 +    spinHold = performance.now();     // the clock starts after the first draws settle
 +    // the pull out of the bubble plays once the page can draw it smoothly
 +    if (camReset) camReset.t0 = performance.now();
++    // keep the veil up until the sky has drawn its first frame; always reveal
++    // by then even if the sky never reports (custom shader failure, no WebGL2)
++    let revealed = false;
++    const revealNow = () => { if (revealed) return; revealed = true; document.body.classList.remove("loading"); };
++    if (!hidden) {
++      Space.onceDrawn(revealNow);
++      setTimeout(revealNow, 2000);
++    } else {
++      revealNow();
++    }
 +    // let the first visible frame land before any heavy content work runs on
 +    // the main thread: sub-labels and the physics build wait for it
 +    setTimeout(() => { if (document.hidden) return; buildSubLabels(); }, 50);
 +    setTimeout(() => { if (document.hidden) return; buildFields(); }, 150);
-+    document.body.classList.remove("loading");
 +    // load-time watch: report frames that stall once the map is up, so a
 +    // freeze has a page-side witness (its stack the profiler has already)
 +    const startAt = performance.now();
@@ -19309,10 +19318,10 @@ index 0000000000..4d6fc8fdf4
 +Space.rendererMain();
 diff --git a/browser/content/celesta/space.js b/browser/content/celesta/space.js
 new file mode 100644
-index 0000000000..a97fbd9ccd
+index 0000000000..954788ce65
 --- /dev/null
 +++ b/browser/content/celesta/space.js
-@@ -0,0 +1,502 @@
+@@ -0,0 +1,510 @@
 +/* ============================================================
 +   space.js ΓÇö WebGL fullscreen background for the home page
 +   Realistic procedural sky: domain-warped fbm nebulae with dark
@@ -19688,7 +19697,7 @@ index 0000000000..a97fbd9ccd
 +    worker.onmessage = ({ data }) => {
 +      if (data.perf) { perfData = { ...data.perf, custom }; return; }
 +      if (data.snap) { snapped?.(data.snap); return; }
-+      if (data.drawn) { busy = false; return; }
++      if (data.drawn) { busy = false; if (!skyFrameDone) { skyFrameDone = true; notifyDrawn(); } return; }
 +      if (!data.ok) {
 +        if (data.log) console.error("space shader:", data.log);
 +        if (customFS) {
@@ -19719,6 +19728,14 @@ index 0000000000..a97fbd9ccd
 +    dpr = Math.min(window.devicePixelRatio || 1, 1.25) * (custom ? 0.5 : RENDER);
 +    worker.postMessage({ size: [Math.max(1, Math.round(innerWidth * dpr)), Math.max(1, Math.round(innerHeight * dpr))] });
 +  }
++
++  // the page asks to know when the sky's first frame is actually on screen,
++  // so it can stay under its veil until it has something to reveal
++  let skyFrameDone = false, onDrawn = null;
++  function onceDrawn(cb) {
++    if (skyFrameDone) cb(); else onDrawn = cb;
++  }
++  function notifyDrawn() { if (onDrawn) { const cb = onDrawn; onDrawn = null; cb(); } }
 +
 +  /* the sky's layers (uF0..uF5): how much each moves with a pan */
 +  const PARALLAX = [1, 1, 1, 1, 1, 1];
@@ -19813,7 +19830,7 @@ index 0000000000..a97fbd9ccd
 +  let perfData = null;
 +  function perf() { const out = perfData; perfData = null; return out; }
 +
-+  return { init, restart, view, resize, draw, sample, setNebula, setStars, setStarRef, snapshot, perf, rendererMain, get last() { return last; }, get ok() { return ok; } };
++  return { init, restart, view, resize, draw, sample, setNebula, setStars, setStarRef, snapshot, perf, rendererMain, onceDrawn, get last() { return last; }, get ok() { return ok; } };
 +})();
 diff --git a/browser/content/celesta/style.css b/browser/content/celesta/style.css
 new file mode 100644
