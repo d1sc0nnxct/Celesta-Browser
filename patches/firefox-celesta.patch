@@ -14886,10 +14886,10 @@ index 0000000000..cad8621b82
 +};
 diff --git a/browser/content/celesta/graph.js b/browser/content/celesta/graph.js
 new file mode 100644
-index 0000000000..2a223b7454
+index 0000000000..98260499bf
 --- /dev/null
 +++ b/browser/content/celesta/graph.js
-@@ -0,0 +1,2754 @@
+@@ -0,0 +1,2757 @@
 +/* ============================================================
 +   Star network graph + right-click floating omnibox
 +   World coordinates: (0,0) = viewport center at scale 1
@@ -17547,7 +17547,10 @@ index 0000000000..2a223b7454
 +    settled = true;
 +    const t0 = performance.now();
 +    const hidden = document.hidden;
-+    if (!hidden) { Bubbles.init(); Bubbles.draw(pan, zoom, spinTable); startSky(); }
++    // two extra warm-up draws behind the shimmer: the GPU allocates its
++    // textures, atlases and programs with the map still hidden, so the first
++    // revealed frame isn't the one paying for it
++    if (!hidden) { Bubbles.init(); Bubbles.draw(pan, zoom, spinTable); startSky(); Bubbles.draw(pan, zoom, spinTable); }
 +    const initMs = Math.round(performance.now() - t0);
 +    performance.mark("Celesta-ready"); dispatchEvent(new Event("Celesta-ready"));
 +    pageDiag("ready: bubbles init " + initMs + "ms" + (hidden ? " (hidden, skipped draw)" : ""));
