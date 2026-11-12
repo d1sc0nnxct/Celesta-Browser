@@ -9355,10 +9355,10 @@ index 0000000000..117381b29a
 +}
 diff --git a/browser/content/celesta/celestaHomeChild.sys.mjs b/browser/content/celesta/celestaHomeChild.sys.mjs
 new file mode 100644
-index 0000000000..9420513191
+index 0000000000..9e218a66de
 --- /dev/null
 +++ b/browser/content/celesta/celestaHomeChild.sys.mjs
-@@ -0,0 +1,387 @@
+@@ -0,0 +1,402 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9378,6 +9378,7 @@ index 0000000000..9420513191
 +  CelestaShaderFps: ["Celesta.theme.shaderFps", 30],
 +  CelestaProfiling: ["Celesta.profiling", false],
 +  CelestaBgColor: ["Celesta.home.background.color", "#05050a"],
++  CelestaAudioVolume: ["Celesta.audio.volume", 24],
 +};
 +
 +const lazy = {};
@@ -9530,6 +9531,18 @@ index 0000000000..9420513191
 +    }
 +  }
 +
++  // the start page cannot write prefs itself: it dispatches "Celesta-pref"
++  // ({ name, value }) and this writes it
++  setPref(detail) {
++    try {
++      const name = String(detail?.name || "");
++      const value = String(detail?.value ?? "");
++      if (/^Celesta\.[A-Za-z.][\w.-]*$/.test(name) && value.length < 128) {
++        Services.prefs.setStringPref(name, value);
++      }
++    } catch {}
++  }
++
 +  handleEvent(e) {
 +    // boot.js asks for the merged site catalogue; the parent reads it (chrome
 +    // content cannot fetch chrome:// bytes reliably) and boot waits for the reply
@@ -9564,6 +9577,8 @@ index 0000000000..9420513191
 +    // the merged catalogue for boot.js: the page dispatches "Celesta-dataset"
 +    // (its own fetch of chrome:// bytes is unreliable); like the media poll,
 +    // the actor listens for the event directly on the window
++    // the page asks to persist a value (currently the hover volume)
++    win.addEventListener("Celesta-pref", e => this.setPref(e.detail));
 +    win.addEventListener("Celesta-dataset", () => this.datasetRequest());
 +    // boot.js/actors report their dataset stages into the profiler's log
 +    win.addEventListener("Celesta-diag", e => this.sendAsyncMessage("CelestaHome:Diag", String(e.detail ?? "")));
@@ -14887,10 +14902,10 @@ index 0000000000..cad8621b82
 +};
 diff --git a/browser/content/celesta/graph.js b/browser/content/celesta/graph.js
 new file mode 100644
-index 0000000000..a865690f06
+index 0000000000..ac3ee6ffd6
 --- /dev/null
 +++ b/browser/content/celesta/graph.js
-@@ -0,0 +1,2766 @@
+@@ -0,0 +1,2773 @@
 +/* ============================================================
 +   Star network graph + right-click floating omnibox
 +   World coordinates: (0,0) = viewport center at scale 1
@@ -16199,11 +16214,15 @@ index 0000000000..a865690f06
 +const VOLUME_PREF = "celesta.audio.volume";
 +const VOLUME_DEFAULT = 24;                      // percent of the 0.05 ceiling
 +function hoverVolume() {
-+  let pct = VOLUME_DEFAULT;
-+  try {
-+    if (typeof Services !== "undefined") pct = +Services.prefs.getStringPref(VOLUME_PREF, String(VOLUME_DEFAULT));
-+    else throw 0;
-+  } catch { try { const s = localStorage.getItem(VOLUME_PREF); if (s != null) pct = +s; } catch {} }
++  // the actor hands the stored value over as data-Celesta-audio-volume before
++  // scripts run; fall back to the pref, then to localStorage
++  let pct = +document.documentElement.dataset.CelestaAudioVolume;
++  if (!Number.isFinite(pct)) {
++    try {
++      if (typeof Services !== "undefined") pct = +Services.prefs.getStringPref(VOLUME_PREF, String(VOLUME_DEFAULT));
++      else throw 0;
++    } catch { try { const s = localStorage.getItem(VOLUME_PREF); if (s != null) pct = +s; } catch {} }
++  }
 +  if (!Number.isFinite(pct)) pct = VOLUME_DEFAULT;
 +  return Math.max(0, Math.min(1, pct / 100)) * 0.05;
 +}
@@ -16213,13 +16232,16 @@ index 0000000000..a865690f06
 +    if (typeof Services !== "undefined") Services.prefs.setStringPref(VOLUME_PREF, String(pct));
 +    else throw 0;
 +  } catch { try { localStorage.setItem(VOLUME_PREF, String(pct)); } catch {} }
++  try { dispatchEvent(new CustomEvent("Celesta-pref", { detail: { name: VOLUME_PREF, value: String(pct) } })); } catch {}
 +  if (audioMaster) audioMaster.gain.value = (pct / 100) * 0.05;
 +}
 +function initVolumeUI() {
 +  const btn = document.getElementById("soundbtn"), box = document.getElementById("volume"), slider = document.getElementById("volumeSlider");
 +  if (!btn || !box || !slider) return;
-+  let pct = VOLUME_DEFAULT;
-+  try { pct = +((typeof Services !== "undefined") ? Services.prefs.getStringPref(VOLUME_PREF, String(VOLUME_DEFAULT)) : (localStorage.getItem(VOLUME_PREF) ?? VOLUME_DEFAULT)); } catch { try { pct = +(localStorage.getItem(VOLUME_PREF) ?? VOLUME_DEFAULT); } catch {} }
++  let pct = +document.documentElement.dataset.CelestaAudioVolume;
++  if (!Number.isFinite(pct)) {
++    try { pct = +((typeof Services !== "undefined") ? Services.prefs.getStringPref(VOLUME_PREF, String(VOLUME_DEFAULT)) : (localStorage.getItem(VOLUME_PREF) ?? VOLUME_DEFAULT)); } catch { try { pct = +(localStorage.getItem(VOLUME_PREF) ?? VOLUME_DEFAULT); } catch {} }
++  }
 +  slider.value = Number.isFinite(pct) ? pct : VOLUME_DEFAULT;
 +  for (const type of ["pointerdown", "mousedown", "click", "input", "change"]) box.addEventListener(type, (e) => e.stopPropagation());
 +  box.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
@@ -17659,10 +17681,10 @@ index 0000000000..a865690f06
 +document.addEventListener("pointerleave", () => { pointerScreen = { x: -1e5, y: -1e5 }; pointerMoved = true; kick(); });
 diff --git a/browser/content/celesta/index.html b/browser/content/celesta/index.html
 new file mode 100644
-index 0000000000..bf13368718
+index 0000000000..5792ce32d8
 --- /dev/null
 +++ b/browser/content/celesta/index.html
-@@ -0,0 +1,65 @@
+@@ -0,0 +1,73 @@
 +<!DOCTYPE html>
 +<html lang="en">
 +<head>
@@ -17672,6 +17694,14 @@ index 0000000000..bf13368718
 +<link rel="stylesheet" href="chrome://celesta/content/style.css">
 +</head>
 +<body>
++
++  <!-- loading veil: pure black + a thin bar that sweeps -->
++  <div id="loading" role="status" aria-label="Celesta is loading">
++    <div class="load-inner">
++      <div class="load-mark">C</div>
++      <div class="load-bar"><span></span></div>
++    </div>
++  </div>
 +
 +  <!-- WebGL space background (nebulae + galactic band + stars; moves with the view) -->
 +  <canvas id="space" aria-hidden="true"></canvas>
@@ -19787,10 +19817,10 @@ index 0000000000..a97fbd9ccd
 +})();
 diff --git a/browser/content/celesta/style.css b/browser/content/celesta/style.css
 new file mode 100644
-index 0000000000..a5a8c1eb04
+index 0000000000..63fdcb02e6
 --- /dev/null
 +++ b/browser/content/celesta/style.css
-@@ -0,0 +1,517 @@
+@@ -0,0 +1,553 @@
 +/* ============================================================
 +   OLED black floating home ΓÇö Obsidian-style star network
 +   Palette: true black canvas, glass panels, nebula accent
@@ -19892,6 +19922,42 @@ index 0000000000..a5a8c1eb04
 +   a hundred times its size had its blurred shadow painted on the CPU) */
 +body.warping .sublabel > span { opacity: 0; transition: none; }
 +
++/* loading veil: the whole page is black until everything is ready */
++#loading {
++  position: fixed; inset: 0; z-index: 100;
++  display: flex; align-items: center; justify-content: center;
++  background: #000;
++  pointer-events: none;
++}
++body:not(.loading) #loading { display: none; }
++.load-inner { display: flex; flex-direction: column; align-items: center; gap: 22px; }
++.load-mark {
++  color: rgba(230,235,255,0.92);
++  font: 300 96px/1 'Times New Roman', serif;
++  letter-spacing: .08em;
++  text-shadow: 0 0 18px rgba(196,210,255,.45), 0 0 60px rgba(140,170,255,.3);
++  animation: load-breathe 3.2s ease-in-out infinite;
++}
++@keyframes load-breathe {
++  0%, 100% { text-shadow: 0 0 14px rgba(196,210,255,.45), 0 0 42px rgba(140,170,255,.25); }
++  50%      { text-shadow: 0 0 26px rgba(205,220,255,.75), 0 0 90px rgba(150,180,255,.45); }
++}
++.load-bar {
++  position: relative; overflow: hidden;
++  width: 180px; height: 1.5px; border-radius: 999px;
++  background: rgba(205,214,255,0.12);
++}
++.load-bar span {
++  position: absolute; top: 0; left: 0; bottom: 0;
++  width: 30%;
++  border-radius: 999px;
++  background: linear-gradient(90deg, transparent 0%, rgba(222,231,255,.75) 25%, #fff 50%, rgba(222,231,255,.75) 75%, transparent 100%);
++  animation: load-sweep 1.6s cubic-bezier(.4,0,.2,1) infinite;
++}
++@keyframes load-sweep {
++  0%   { transform: translateX(-110%); }
++  100% { transform: translateX(340%); }
++}
 +body.loading { cursor: progress; }
 +
 +/* profiling mode: graph.js #perfbox */
