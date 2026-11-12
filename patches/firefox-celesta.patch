@@ -8148,10 +8148,10 @@ index 0000000000..45384c433b
 +})();
 diff --git a/browser/content/celesta/bubbles.js b/browser/content/celesta/bubbles.js
 new file mode 100644
-index 0000000000..fa28c0e20d
+index 0000000000..9477e52c55
 --- /dev/null
 +++ b/browser/content/celesta/bubbles.js
-@@ -0,0 +1,667 @@
+@@ -0,0 +1,668 @@
 +/* ============================================================
 +   Every site as a GPU circle (outline, faint fill, soft glow): one
 +   instanced draw call, redrawn when the camera moves and a few times a
@@ -8591,7 +8591,8 @@ index 0000000000..fa28c0e20d
 +        gl.useProgram(lprog);
 +        gl.bindVertexArray(lvao);
 +        gl.bindTexture(gl.TEXTURE_2D, ltex);
-+        if (mipsDirty) { gl.generateMipmap(gl.TEXTURE_2D); mipsDirty = false; }
++        const diving = document.body.classList.contains("warping");
++        if (mipsDirty && !diving) { gl.generateMipmap(gl.TEXTURE_2D); mipsDirty = false; }
 +        gl.uniform2f(L.uPan, m.pan[0], m.pan[1]);
 +        gl.uniform1f(L.uZoom, m.zoom);
 +        gl.uniform1f(L.uTime, m.t);
@@ -14886,10 +14887,10 @@ index 0000000000..cad8621b82
 +};
 diff --git a/browser/content/celesta/graph.js b/browser/content/celesta/graph.js
 new file mode 100644
-index 0000000000..98260499bf
+index 0000000000..527accdcbd
 --- /dev/null
 +++ b/browser/content/celesta/graph.js
-@@ -0,0 +1,2757 @@
+@@ -0,0 +1,2761 @@
 +/* ============================================================
 +   Star network graph + right-click floating omnibox
 +   World coordinates: (0,0) = viewport center at scale 1
@@ -17437,7 +17438,11 @@ index 0000000000..98260499bf
 +  const throttled = idleThrottled();
 +  const stillGap = throttled ? 1000 : 240;
 +  const camFresh = now - lastCamMoveAt < (throttled ? 250 : 1000);
-+  if (!document.hidden && skyOn && ((skyShader && !throttled) || camFresh || now - skyDrawnAt >= stillGap)) {
++  // while the galaxy is flying at near-empty speed, the sky's share of the
++  // GPU is bypassed it: the frames are too expensive to also burn the
++  // 27-46 ms/frame sky while moving, so it holds its drift cadence instead
++  const galaxyFast = spinRate > 0.35 && !camFresh;
++  if (!document.hidden && skyOn && !galaxyFast && ((skyShader && !throttled) || camFresh || now - skyDrawnAt >= stillGap)) {
 +    skyDrawnAt = now;
 +    Space.draw(now, pan, zoom);
 +  }
