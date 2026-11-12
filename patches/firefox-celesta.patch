@@ -12951,10 +12951,10 @@ index 0000000000..11bd123d05
 +}
 diff --git a/browser/content/celesta/chrome.js b/browser/content/celesta/chrome.js
 new file mode 100644
-index 0000000000..34e6efbad3
+index 0000000000..1ab1cac5e7
 --- /dev/null
 +++ b/browser/content/celesta/chrome.js
-@@ -0,0 +1,1800 @@
+@@ -0,0 +1,1804 @@
 +/* This Source Code Form is subject to the terms of the Mozilla Public
 + * License, v. 2.0. If a copy of the MPL was not distributed with this
 + * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14237,13 +14237,17 @@ index 0000000000..34e6efbad3
 +      } else if (name == "CelestaHome:State") {
 +        keep(data.state);
 +      } else if (name == "CelestaHome:Open") {
-+        // the site opens in the tab the dive was made for, once that tab keeps the view
-+        const target = ownerOf(data.state);
++        // the site opens in the tab the dive was made for. The tab is usually
++        // found via the view's seq (history.state.CelestaSeq); if that lookup
++        // failed - the tab never reported in yet, or its entry is gone - fall
++        // back to the tab the shared overlay is currently shown for, so the
++        // dive still navigates instead of dropping the user on a black page
++        const target = ownerOf(data.state) ?? owner ?? gBrowser.selectedBrowser;
 +        if (target && /^https?:/i.test(data.url)) {
 +          Promise.resolve(save(target, data.state)).then(() =>
 +            target.fixupAndLoadURIString(data.url, {
 +              triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
-+            })
++            }).catch(() => {})
 +          );
 +        }
 +      }
