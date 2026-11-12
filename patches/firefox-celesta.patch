@@ -8148,10 +8148,10 @@ index 0000000000..45384c433b
 +})();
 diff --git a/browser/content/celesta/bubbles.js b/browser/content/celesta/bubbles.js
 new file mode 100644
-index 0000000000..9477e52c55
+index 0000000000..98737a493b
 --- /dev/null
 +++ b/browser/content/celesta/bubbles.js
-@@ -0,0 +1,668 @@
+@@ -0,0 +1,672 @@
 +/* ============================================================
 +   Every site as a GPU circle (outline, faint fill, soft glow): one
 +   instanced draw call, redrawn when the camera moves and a few times a
@@ -8753,11 +8753,15 @@ index 0000000000..9477e52c55
 +    return true;
 +  }
 +
-+  function resize() {
++  /* scale: 1 is full quality; lower while the camera is moving and the GPU
++     is busiest. The canvas CSS size never changes - only the buffer it draws
++     into - so the page stays put; the browser upsamples it */
++  function resize(scale = 1) {
 +    if (!ok) return;
-+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-+    if (atlasCtx && Math.min(window.devicePixelRatio || 1, 1.5) !== raster) { resetAtlas(); setLabels(labels); }
-+    send({ size: [Math.round(innerWidth * dpr), Math.round(innerHeight * dpr)], css: [innerWidth, innerHeight], raster: Math.min(window.devicePixelRatio || 1, 1.5) });
++    const full = Math.min(window.devicePixelRatio || 1, 1.5);
++    const dpr = full * scale;
++    if (atlasCtx && full !== raster) { resetAtlas(); setLabels(labels); }
++    send({ size: [Math.max(64, Math.round(innerWidth * dpr)), Math.max(64, Math.round(innerHeight * dpr))], css: [innerWidth, innerHeight], raster: full });
 +    if (last) draw(last.pan, last.zoom);
 +  }
 +
@@ -14887,10 +14891,10 @@ index 0000000000..cad8621b82
 +};
 diff --git a/browser/content/celesta/graph.js b/browser/content/celesta/graph.js
 new file mode 100644
-index 0000000000..a865690f06
+index 0000000000..eb0af05629
 --- /dev/null
 +++ b/browser/content/celesta/graph.js
-@@ -0,0 +1,2766 @@
+@@ -0,0 +1,2777 @@
 +/* ============================================================
 +   Star network graph + right-click floating omnibox
 +   World coordinates: (0,0) = viewport center at scale 1
@@ -17258,6 +17262,8 @@ index 0000000000..a865690f06
 +  // the sky moves with the same frame as the bubbles, not its own timer: the
 +  // timer drew at a different cadence, and the sky visibly trailed the map
 +  if (skyOn && (camMoved || warp)) Space.draw(performance.now(), pan, zoom);
++  // drop to a smaller buffer while the camera is moving and back to full once it settles
++  setRenderScale(((performance.now() - lastCamMoveAt) < 120 || warp || camReset || zoomAnchor || panDrag) ? 0.62 : 1);
 +  if (camMoved || warp || camReset || zoomAnchor || fading) kick();
 +  else if (moving || easing) kickAt(motionMs() - (performance.now() - t));
 +  if (PROFILING) {
@@ -17470,13 +17476,22 @@ index 0000000000..a865690f06
 +// camera so the same world point stays in the middle
 +let lastW = innerWidth, lastH = innerHeight;
 +let resizeTimer = 0;
++// the canvases render at full quality only when the camera is still; while it
++// is moving they draw smaller (the CSS layout never changes, only the buffer),
++// which cuts roughly half the shader pixels at no cost at rest
++let renderScale = 1;
++function setRenderScale(v) {
++  if (Math.abs(v - renderScale) < 0.01) return;
++  renderScale = v;
++  Space.resize(v); Bubbles.resize(v);
++}
 +addEventListener("resize", () => {
 +  pan.x += (innerWidth - lastW) / 2; pan.y += (innerHeight - lastH) / 2;
 +  lastW = innerWidth; lastH = innerHeight;
 +  zoomAnchor = null; applyScene();
 +  // canvases settle after the drag, so the window does not fight the resizer
 +  clearTimeout(resizeTimer);
-+  resizeTimer = setTimeout(() => { Space.resize(); Bubbles.resize(); }, 120);
++  resizeTimer = setTimeout(() => { Space.resize(renderScale); Bubbles.resize(renderScale); }, 120);
 +});
 +
 +/* frame the most popular sites at home zoom; ZMIN lets the whole network fit */
@@ -19279,10 +19294,10 @@ index 0000000000..4d6fc8fdf4
 +Space.rendererMain();
 diff --git a/browser/content/celesta/space.js b/browser/content/celesta/space.js
 new file mode 100644
-index 0000000000..a97fbd9ccd
+index 0000000000..4edd3222ea
 --- /dev/null
 +++ b/browser/content/celesta/space.js
-@@ -0,0 +1,502 @@
+@@ -0,0 +1,503 @@
 +/* ============================================================
 +   space.js ΓÇö WebGL fullscreen background for the home page
 +   Realistic procedural sky: domain-warped fbm nebulae with dark
@@ -19682,11 +19697,12 @@ index 0000000000..a97fbd9ccd
 +    return true;
 +  }
 +
-+  function resize() {
++  /* scale: 1 is full quality; lower while the camera is moving (same as the bubbles) */
++  function resize(scale = 1) {
 +    focus = null;   // the layers start again from the new window's middle
 +    if (!ok) return;
 +    // a custom shader can cost any amount per pixel: half resolution keeps it from starving the page
-+    dpr = Math.min(window.devicePixelRatio || 1, 1.25) * (custom ? 0.5 : RENDER);
++    dpr = Math.min(window.devicePixelRatio || 1, 1.25) * (custom ? 0.5 : RENDER) * scale;
 +    worker.postMessage({ size: [Math.max(1, Math.round(innerWidth * dpr)), Math.max(1, Math.round(innerHeight * dpr))] });
 +  }
 +
