@@ -14882,10 +14882,10 @@ index 0000000000..cad8621b82
 +};
 diff --git a/browser/content/celesta/graph.js b/browser/content/celesta/graph.js
 new file mode 100644
-index 0000000000..d61500e079
+index 0000000000..2a223b7454
 --- /dev/null
 +++ b/browser/content/celesta/graph.js
-@@ -0,0 +1,2750 @@
+@@ -0,0 +1,2754 @@
 +/* ============================================================
 +   Star network graph + right-click floating omnibox
 +   World coordinates: (0,0) = viewport center at scale 1
@@ -16310,7 +16310,9 @@ index 0000000000..d61500e079
 +/* ---------------- interactions: nodes ---------------- */
 +function bindNode(el, n) {
 +  el.addEventListener("click", (e) => {
-+    if (e.button !== 0 || moved >= 5 || warp) return;
++    // the camera is still moving here; the bubble under the pointer may not
++    // be the one the click lands on when they stop moving
++    if (e.button !== 0 || moved >= 5 || warp || zoomAnchor || camReset || offMix < 1) return;
 +    openURL("https://" + n.domain + (n.path || ""), { node: n });
 +  });
 +  // middle-click opens the site in a new tab; mouseup, because Firefox's
@@ -17548,9 +17550,11 @@ index 0000000000..d61500e079
 +    spinHold = performance.now();     // the clock starts after the first draws settle
 +    // the pull out of the bubble plays once the page can draw it smoothly
 +    if (camReset) camReset.t0 = performance.now();
++    // let the first visible frame land before any heavy content work runs on
++    // the main thread: sub-labels and the physics build wait for it
++    setTimeout(() => { if (document.hidden) return; buildSubLabels(); }, 50);
++    setTimeout(() => { if (document.hidden) return; buildFields(); }, 150);
 +    document.body.classList.remove("loading");
-+    buildSubLabels();
-+    buildFields();
 +    // load-time watch: report frames that stall once the map is up, so a
 +    // freeze has a page-side witness (its stack the profiler has already)
 +    const startAt = performance.now();
