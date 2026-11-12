@@ -14887,10 +14887,10 @@ index 0000000000..cad8621b82
 +};
 diff --git a/browser/content/celesta/graph.js b/browser/content/celesta/graph.js
 new file mode 100644
-index 0000000000..527accdcbd
+index 0000000000..a865690f06
 --- /dev/null
 +++ b/browser/content/celesta/graph.js
-@@ -0,0 +1,2761 @@
+@@ -0,0 +1,2766 @@
 +/* ============================================================
 +   Star network graph + right-click floating omnibox
 +   World coordinates: (0,0) = viewport center at scale 1
@@ -17255,6 +17255,9 @@ index 0000000000..527accdcbd
 +  if (turn) showSubLabels();
 +  const fading = Bubbles.animating(performance.now());
 +  if (fading && !camMoved) Bubbles.draw(pan, zoom);
++  // the sky moves with the same frame as the bubbles, not its own timer: the
++  // timer drew at a different cadence, and the sky visibly trailed the map
++  if (skyOn && (camMoved || warp)) Space.draw(performance.now(), pan, zoom);
 +  if (camMoved || warp || camReset || zoomAnchor || fading) kick();
 +  else if (moving || easing) kickAt(motionMs() - (performance.now() - t));
 +  if (PROFILING) {
@@ -17437,12 +17440,14 @@ index 0000000000..527accdcbd
 +  const now = performance.now();
 +  const throttled = idleThrottled();
 +  const stillGap = throttled ? 1000 : 240;
-+  const camFresh = now - lastCamMoveAt < (throttled ? 250 : 1000);
 +  // while the galaxy is flying at near-empty speed, the sky's share of the
 +  // GPU is bypassed it: the frames are too expensive to also burn the
-+  // 27-46 ms/frame sky while moving, so it holds its drift cadence instead
-+  const galaxyFast = spinRate > 0.35 && !camFresh;
-+  if (!document.hidden && skyOn && !galaxyFast && ((skyShader && !throttled) || camFresh || now - skyDrawnAt >= stillGap)) {
++  // 27-46 ms/frame sky while moving, so it holds its drift cadence instead.
++  // While the camera is moving the sky is drawn by frame() itself, one draw per
++  // frame instead of a timer at a different cadence, so the sky never lags
++  // behind the bubbles. A custom shader still animates at its Settings rate.
++  const galaxyFast = spinRate > 0.35;
++  if (!document.hidden && skyOn && !galaxyFast && ((skyShader && !throttled) || now - skyDrawnAt >= stillGap)) {
 +    skyDrawnAt = now;
 +    Space.draw(now, pan, zoom);
 +  }
