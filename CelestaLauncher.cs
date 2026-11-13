@@ -16,7 +16,7 @@ internal static class Program
     private const string ReleasesLatestUrl = "https://api.github.com/repos/d1sc0nnxct/Celesta-Browser/releases/latest";
     private const string RegistryUninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\Celesta";
     // the version baked into installer\celesta.nsi; used when the registry has none (portable/dev run)
-    private const string FallbackVersion = "0.2.1";
+    private const string FallbackVersion = "0.2.2";
 
     private static readonly string[] UserPrefs =
     {
